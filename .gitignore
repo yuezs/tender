@@ -5,6 +5,13 @@ frontend/.env.local
 backend/.venv/
 backend/__pycache__/
 backend/**/*.pyc
+backend/openclaw_agents/**/.openclaw/
+backend/openclaw_agents/**/BOOTSTRAP.md
+backend/openclaw_agents/**/HEARTBEAT.md
+backend/openclaw_agents/**/IDENTITY.md
+backend/openclaw_agents/**/SOUL.md
+backend/openclaw_agents/**/TOOLS.md
+backend/openclaw_agents/**/USER.md
 
 .runlogs/
 
