@@ -1,31 +1,22 @@
-import Link from "next/link";
 import { ReactNode } from "react";
+
+import SidebarNav from "@/components/ui/sidebar-nav";
 
 type AppShellProps = {
   children: ReactNode;
 };
 
-const navItems = [
-  { href: "/", label: "首页" },
-  { href: "/tender", label: "招标上传" },
-  { href: "/results", label: "结果页" },
-  { href: "/knowledge", label: "知识库" }
-];
-
 export default function AppShell({ children }: AppShellProps) {
   return (
-    <div className="page-shell">
-      <header className="topbar">
-        <div className="brand">AI 招投标助手</div>
-        <nav className="nav">
-          {navItems.map((item) => (
-            <Link key={item.href} className="nav-link" href={item.href}>
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-      </header>
-      {children}
+    <div className="min-h-screen bg-canvas">
+      <div className="mx-auto flex min-h-screen max-w-[1680px] flex-col lg:flex-row">
+        <SidebarNav />
+        <main className="min-w-0 flex-1">
+          <div className="mx-auto flex min-h-screen max-w-[1160px] flex-col gap-6 px-4 py-4 sm:px-6 lg:px-8 lg:py-8">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

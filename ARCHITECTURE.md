@@ -1,145 +1,253 @@
 # 技术架构设计
 
+本文档描述当前仓库的实际实现状态，而不是未来预研架构。
+
 ## 一、整体架构
 
-[Frontend]
-    ↓
-[Backend API]
-    ↓
- ┌───────────────┬───────────────┬───────────────┐
- │               │               │               │
-[Parser]      [Agent]        [Knowledge]      [DB: MySQL]
-                                 │
-                              [File Storage]
+```text
+Frontend (Next.js + TypeScript + Tailwind)
+        |
+        v
+Backend API (FastAPI)
+        |
+        +-- Tender Module
+        |     |
+        |     +-- Files Module
+        |     +-- Agent Module
+        |
+        +-- Knowledge Module
+        |
+        +-- Core
+              |
+              +-- MySQL
+              +-- Local Storage
+```
 
----
-
-## 二、模块职责
+## 二、当前模块职责
 
 ### 1. frontend
+
 职责：
-- 展示页面
-- 上传文件
+
+- 提供工作台页面
+- 上传招标文件
 - 展示解析结果
 - 展示投标建议
 - 展示标书初稿
-- 管理知识文档上传与检索
+- 展示知识引用结果
+
+当前页面：
+
+- `/`
+- `/tender`
+- `/results`
+- `/knowledge`
 
 ### 2. backend
+
 职责：
+
 - 提供统一 API 入口
-- 负责任务编排
-- 调用 parser / agent / knowledge
-- 负责数据入库
-- 负责错误处理与状态返回
+- 编排招标主链路
+- 编排知识库处理与检索
+- 对接 Agent 调用链路
+- 返回统一 JSON 结构
+- 处理异常并输出可读错误信息
 
-建议分层：
-- api/
-- services/
-- schemas/
-- repositories/
-- models/
-- core/
+当前后端强制分层：
 
-### 3. parser
+- `api/router`
+- `service`
+- `repository`
+- `schema`
+- `model`
+- `core`
+
+### 3. files 模块
+
 职责：
-- 解析 PDF / DOCX / TXT / HTML
-- 输出纯文本
-- 输出基础结构化信息（可选）
 
-### 4. agent
+- 保存上传文件到本地 `storage/`
+- 解析招标文件文本
+- 生成解析文本文件
+
+当前状态：
+
+- 已支持 `txt / docx`
+- `pdf` 仅预留
+
+### 4. tender 模块
+
 职责：
-- 根据输入调用不同 Agent
-- 组织 Prompt
-- 调用 OpenClaw / LLM
-- 输出结构化结果
 
-当前只保留 4 个 Agent：
-1. extract_agent
-2. judge_agent
-3. generate_agent
-4. orchestrator
+- 管理招标文件处理主链路
+- 驱动 `upload -> parse -> extract -> judge -> generate`
+- 保存招标处理记录
 
-### 5. knowledge
+当前状态：
+
+- 当前记录先保存在本地 JSON
+- 这样做是为了不被数据库建模阻塞 MVP 主链路
+- 后续可以迁移到 MySQL
+
+### 5. knowledge 模块
+
 职责：
-- 保存企业知识文档
-- 文档分类
-- 文本解析
+
+- 上传企业知识文档
+- 解析文本
 - 规则切块
-- 简单检索
-- 返回知识片段给 Agent
+- 写入 MySQL
+- 提供简单检索能力
 
-### 6. worker（预留）
+当前状态：
+
+- `knowledge_documents` 和 `knowledge_chunks` 已落 MySQL
+- 不使用 PostgreSQL
+- 不使用 JSONB
+- 不使用向量检索
+
+### 6. agent 模块
+
 职责：
-- 处理异步任务
-- 后续可处理大文件解析、OCR、批量生成
 
----
+- 维护 Prompt 模板
+- 编排知识上下文
+- 驱动 `judge_agent` 和 `generate_agent`
+- 对模型输出做结构化兜底
 
-## 三、核心数据流
+当前状态：
 
-### 场景一：招标文件处理
+- 当前只保留 4 个 Agent：
+  - `extract_agent`
+  - `judge_agent`
+  - `generate_agent`
+  - `orchestrator`
+- 当前输出仍是 mock / 规则版
+- 知识检索与上下文组装是真实链路
+
+## 三、当前目录结构
+
+```text
+backend/
+  main.py
+  api/
+    router.py
+  core/
+    config.py
+    database.py
+    exceptions.py
+    logger.py
+    response.py
+  modules/
+    agent/
+    files/
+    knowledge/
+    tender/
+
+frontend/
+  app/
+  components/
+  lib/
+  types/
+
+storage/
+  knowledge/
+  tender/
+```
+
+## 四、核心数据流
+
+### 1. 招标主链路
+
+```text
 用户上传招标文件
-    ↓
-backend 接收文件
-    ↓
-parser 解析文本
-    ↓
-extract_agent 抽取字段
-    ↓
-judge_agent 判断是否建议投标
-    ↓
-generate_agent 生成标书初稿
-    ↓
-结果返回前端并入库
+  -> backend/tender.upload
+  -> files.save
+  -> tender.parse
+  -> files.parse
+  -> tender.extract
+  -> tender.judge
+  -> orchestrator 检索知识
+  -> judge_agent
+  -> tender.generate
+  -> orchestrator 检索知识
+  -> generate_agent
+  -> 返回前端展示
+```
 
-### 场景二：知识库辅助生成
-用户上传企业资料
-    ↓
-knowledge 保存文件
-    ↓
-knowledge 解析文本
-    ↓
-knowledge 切块并入库
-    ↓
-当 agent 需要补充企业信息时
-    ↓
-backend 调用 knowledge 检索
-    ↓
-将知识片段拼成上下文
-    ↓
-agent 输出更贴近企业实际的内容
+### 2. 知识库链路
 
----
+```text
+用户上传知识文档
+  -> knowledge.upload
+  -> 本地保存原始文件
+  -> knowledge.process
+  -> 文本解析
+  -> 规则切块
+  -> 写入 knowledge_documents / knowledge_chunks
+  -> knowledge.retrieve
+  -> orchestrator 消费结果
+```
 
-## 四、为什么当前使用 MySQL
-当前阶段重点是：
-- 快速做出 MVP
-- 完成结构化数据存储
-- 支持简单检索和业务流程
+## 五、Agent 与知识库的关系
+
+当前约束：
+
+- Agent 不直接访问数据库
+- Agent 不直接调用 repository
+- 统一由 backend orchestrator 调用 `KnowledgeService.retrieve`
+
+当前知识来源映射：
+
+- `judge` -> `qualifications + project_cases`
+- `generate` -> `company_profile + templates + project_cases`
+
+orchestrator 负责：
+
+1. 根据任务类型选择知识来源
+2. 为每类来源生成检索 query
+3. 合并检索结果并去重
+4. 格式化为 `context_text`
+5. 把上下文传给 Agent
+
+## 六、数据存储
+
+### 1. MySQL
+
+当前 MySQL 主要用于知识库：
+
+- `knowledge_documents`
+- `knowledge_chunks`
+
+### 2. Local Storage
+
+当前本地文件存储主要用于：
+
+- 招标文件原始文件
+- 招标解析文本
+- 知识文档原始文件
+- 知识文档解析文本
+- 招标本地 JSON 记录
+
+## 七、当前扩展点
+
+已预留但未完成：
+
+- PDF 解析
+- 真实 OpenClaw / LLM 调用
+- 招标主链路 MySQL 化
+- 异步 worker
+- 更复杂的检索和重排
+
+## 八、当前架构边界
 
 当前不做：
-- 复杂向量检索
-- PostgreSQL JSONB 特性
-- 高复杂度全文检索
 
-因此当前阶段统一使用 MySQL。
+- 微服务拆分
+- 多 Agent 扩张
+- 向量数据库
+- 复杂权限体系
+- 审批流
 
----
-
-## 五、扩展策略
-当前架构是“可演进的简洁版”：
-
-### 当前阶段
-- MySQL + 简单检索
-- 规则切块
-- 少量 Agent
-- 同步调用为主
-
-### 后续可扩展方向
-- 增加 worker 异步任务
-- 增加向量检索层
-- 增加知识重排
-- 增加多人协作与权限
-- 增加版本管理
-- 增加标书导出和模板管理
+原则是：简单优先、可运行优先、小步迭代。

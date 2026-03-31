@@ -1,83 +1,91 @@
-# 开发任务拆解
+# 开发任务状态
 
-## 第一阶段：项目骨架
-目标：
-- 初始化前后端项目
-- 建立目录结构
-- 建立基础 API
-- 建立基础页面
+本文档记录当前项目任务的真实进度。
 
-任务：
-1. 初始化 frontend（Next.js + TypeScript）
-2. 初始化 backend（FastAPI）
-3. 建立 backend 分层目录
-4. 创建 health 接口
-5. 创建首页 / 上传页 / 结果页
+## 一、已完成
 
----
+### 1. 项目骨架
 
-## 第二阶段：招标文件链路
-目标：
-- 实现从上传到解析的最小闭环
+- 已初始化 frontend：Next.js + TypeScript
+- 已初始化 backend：FastAPI
+- 已建立 backend 分层目录
+- 已实现统一 JSON 返回结构
+- 已实现 `/api/health`
 
-任务：
-1. 实现招标文件上传接口
-2. 保存文件到本地 storage
-3. 实现 txt/docx/pdf 解析（可先支持两种）
-4. 实现抽取接口（可先 mock）
-5. 实现判断接口（可先 mock）
-6. 实现生成接口（可先 mock）
+### 2. 招标主链路 MVP
 
----
+- 已实现招标文件上传接口
+- 已实现文件本地保存
+- 已实现 `txt / docx` 文本解析
+- 已实现 `/parse`
+- 已实现 `/extract`
+- 已实现 `/judge`
+- 已实现 `/generate`
+- 已完成前后端最小联调
 
-## 第三阶段：Agent 接入
-目标：
-- 接入 OpenClaw / Agent 编排
+### 3. 简易知识库第一版
 
-任务：
-1. 建立 extract_agent
-2. 建立 judge_agent
-3. 建立 generate_agent
-4. 建立 orchestrator
-5. 统一 Prompt 模板
-6. 输出结构化 JSON
+- 已创建 `knowledge_documents`
+- 已创建 `knowledge_chunks`
+- 已实现知识文档上传接口
+- 已实现知识文档列表接口
+- 已实现文档处理接口
+- 已实现简单检索接口
 
----
+### 4. 知识库与 Agent 链路接入
 
-## 第四阶段：简易知识库
-目标：
-- 建立知识文档上传、处理、检索能力
+- 已实现 orchestrator 根据任务类型选择知识来源
+- 已实现 `judge_agent` 使用 `qualifications + project_cases`
+- 已实现 `generate_agent` 使用 `company_profile + templates + project_cases`
+- 已实现知识上下文组装
+- 已实现结构化结果返回
 
-任务：
-1. 建表：knowledge_documents / knowledge_chunks
-2. 实现文档上传接口
-3. 实现文档列表接口
-4. 实现解析与切块
-5. 实现简单检索
-6. 接入 judge_agent / generate_agent
+### 5. 前端工作台 UI 重做
 
----
+- 已引入 Tailwind CSS
+- 已重做左侧导航工作台布局
+- 已重做首页
+- 已重做招标上传页
+- 已重做结果页
+- 已重做知识库页面空壳
+- 已验证前端 `npm run build` 通过
 
-## 第五阶段：联调
-目标：
-- 跑通主流程
+## 二、当前仍是 MVP / Mock
 
-任务：
-1. 文件上传 -> 解析 -> 抽取
-2. 抽取 -> 投标建议
-3. 抽取 + 知识检索 -> 初稿生成
-4. 前后端联调
-5. 补充错误提示与加载状态
+- `extract_agent` 仍为规则提取 + mock 兜底
+- `judge_agent` 仍为 mock / 规则版输出
+- `generate_agent` 仍为 mock / 规则版输出
+- PDF 真实解析未完成
+- 知识库前端真实管理功能未完成
+- 招标主链路记录仍为本地 JSON，未切到 MySQL
 
----
+## 三、下一阶段任务
 
-## 第六阶段：优化
-目标：
-- 提升可用性
+### 1. Agent 真正接入
 
-任务：
-1. 统一接口返回结构
-2. 增加日志
-3. 增加异常处理
-4. 增加 mock / real 开关
-5. 补充基础测试
+- 接入真实 OpenClaw / LLM
+- 完善 Prompt 模板
+- 加强输出校验与兜底
+
+### 2. 文件能力补齐
+
+- 增加 PDF 真实解析
+- 评估 OCR 是否需要纳入后续阶段
+
+### 3. 知识库前端
+
+- 增加知识文档上传界面
+- 增加知识文档列表页
+- 增加处理状态展示
+- 增加检索调试页
+
+### 4. 数据持久化收口
+
+- 将招标主链路记录迁移到 MySQL
+- 明确表结构与迁移策略
+
+### 5. 工程质量
+
+- 增加接口测试
+- 增加关键流程回归测试
+- 增加日志与错误排查指引
