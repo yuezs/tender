@@ -1,3 +1,4 @@
+from core.config import settings
 from modules.agent.generate_agent import GenerateAgent
 from modules.agent.judge_agent import JudgeAgent
 from modules.knowledge.service import KnowledgeService
@@ -14,18 +15,59 @@ class AgentOrchestrator:
         self.judge_agent = JudgeAgent()
         self.generate_agent = GenerateAgent()
 
-    def run_judge(self, db, tender_record: dict) -> dict:
+    def prepare_judge(self, db, tender_record: dict) -> dict:
         tender_fields = tender_record.get("extract_result", {})
-        knowledge_context = self._build_knowledge_context(db, task_type="judge", tender_fields=tender_fields)
-        return self.judge_agent.run(tender_fields=tender_fields, knowledge_context=knowledge_context)
-
-    def run_generate(self, db, tender_record: dict, judge_result: dict) -> dict:
-        tender_fields = tender_record.get("extract_result", {})
-        knowledge_context = self._build_knowledge_context(db, task_type="generate", tender_fields=tender_fields)
-        return self.generate_agent.run(
+        knowledge_context = self._build_knowledge_context(
+            db,
+            task_type="judge",
             tender_fields=tender_fields,
-            judge_result=judge_result,
-            knowledge_context=knowledge_context,
+        )
+        return {
+            "agent_id": settings.openclaw_agent_judge,
+            "tender_fields": tender_fields,
+            "knowledge_context": knowledge_context,
+            "prompt": self.judge_agent.build_prompt(tender_fields, knowledge_context),
+        }
+
+    def run_judge_prepared(self, prepared: dict, *, execution_context: dict | None = None) -> dict:
+        return self.judge_agent.run(
+            tender_fields=prepared["tender_fields"],
+            knowledge_context=prepared["knowledge_context"],
+            prompt=prepared["prompt"],
+            execution_context=execution_context,
+        )
+
+    def prepare_generate(self, db, tender_record: dict, judge_result: dict) -> dict:
+        tender_fields = tender_record.get("extract_result", {})
+        knowledge_context = self._build_knowledge_context(
+            db,
+            task_type="generate",
+            tender_fields=tender_fields,
+        )
+        return {
+            "agent_id": settings.openclaw_agent_generate,
+            "tender_fields": tender_fields,
+            "judge_result": judge_result,
+            "knowledge_context": knowledge_context,
+            "prompt": self.generate_agent.build_prompt(
+                tender_fields,
+                judge_result,
+                knowledge_context,
+            ),
+        }
+
+    def run_generate_prepared(
+        self,
+        prepared: dict,
+        *,
+        execution_context: dict | None = None,
+    ) -> dict:
+        return self.generate_agent.run(
+            tender_fields=prepared["tender_fields"],
+            judge_result=prepared["judge_result"],
+            knowledge_context=prepared["knowledge_context"],
+            prompt=prepared["prompt"],
+            execution_context=execution_context,
         )
 
     def select_sources(self, task_type: str) -> list[str]:
@@ -104,7 +146,5 @@ class AgentOrchestrator:
             document_title = chunk.get("document_title", "")
             section_title = chunk.get("section_title", "")
             content = str(chunk.get("content", "")).strip().replace("\n", " ")
-            lines.append(
-                f"[{category}] {document_title} / {section_title}: {content[:220]}"
-            )
+            lines.append(f"[{category}] {document_title} / {section_title}: {content[:220]}")
         return "\n".join(lines)

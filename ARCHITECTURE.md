@@ -14,6 +14,8 @@ Backend API (FastAPI)
         |     |
         |     +-- Files Module
         |     +-- Agent Module
+        |            |
+        |            +-- OpenClaw Gateway Client (WebSocket RPC)
         |
         +-- Knowledge Module
         |
@@ -21,6 +23,7 @@ Backend API (FastAPI)
               |
               +-- MySQL
               +-- Local Storage
+              +-- Local OpenClaw Gateway
 ```
 
 ## 二、当前模块职责
@@ -113,7 +116,8 @@ Backend API (FastAPI)
 
 - 维护 Prompt 模板
 - 编排知识上下文
-- 驱动 `judge_agent` 和 `generate_agent`
+- 驱动 `extract_agent / judge_agent / generate_agent`
+- 通过本地 OpenClaw Gateway 发起同步 Agent RPC
 - 对模型输出做结构化兜底
 
 当前状态：
@@ -123,7 +127,9 @@ Backend API (FastAPI)
   - `judge_agent`
   - `generate_agent`
   - `orchestrator`
-- 当前输出仍是 mock / 规则版
+- 对外 API 结构保持不变
+- 内部真实调用路径已切换为本地 OpenClaw Gateway
+- `extract / judge / generate` 仍保留规则或模板兜底
 - 知识检索与上下文组装是真实链路
 
 ## 三、当前目录结构
@@ -154,6 +160,7 @@ frontend/
 storage/
   knowledge/
   tender/
+    agent_runs/
 ```
 
 ## 四、核心数据流
@@ -167,12 +174,22 @@ storage/
   -> tender.parse
   -> files.parse
   -> tender.extract
+  -> 写入/复用 extract 步骤产物
+  -> extract_agent
+  -> OpenClaw Gateway Client
+  -> Local OpenClaw Gateway
   -> tender.judge
+  -> 写入/复用 judge 步骤产物
   -> orchestrator 检索知识
   -> judge_agent
+  -> OpenClaw Gateway Client
+  -> Local OpenClaw Gateway
   -> tender.generate
+  -> 写入/复用 generate 步骤产物
   -> orchestrator 检索知识
   -> generate_agent
+  -> OpenClaw Gateway Client
+  -> Local OpenClaw Gateway
   -> 返回前端展示
 ```
 
@@ -226,19 +243,38 @@ orchestrator 负责：
 
 - 招标文件原始文件
 - 招标解析文本
+- 招标 Agent 步骤产物
 - 知识文档原始文件
 - 知识文档解析文本
 - 招标本地 JSON 记录
+
+当前招标步骤产物目录：
+
+- `storage/tender/agent_runs/<file_id>/extract/`
+- `storage/tender/agent_runs/<file_id>/judge/`
+- `storage/tender/agent_runs/<file_id>/generate/`
+
+每个步骤固定输出：
+
+- `input.json`
+- `status.json`
+- `output.json`
+
+当前恢复规则：
+
+- 若 `status.json.state == success` 且 `output.json` 完整，则直接复用
+- 若 `state == running` 且存在 `run_id`，则优先继续 `agent.wait`
+- 若 `state == error` 或产物不完整，则覆盖步骤目录后重跑
 
 ## 七、当前扩展点
 
 已预留但未完成：
 
 - PDF 解析
-- 真实 OpenClaw / LLM 调用
 - 招标主链路 MySQL 化
 - 异步 worker
 - 更复杂的检索和重排
+- Gateway 联调稳定性验证与效果调优
 
 ## 八、当前架构边界
 
