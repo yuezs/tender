@@ -218,7 +218,11 @@ class TenderService:
             prepared_payload["prompt"] = input_payload.get("prompt") or prepared_payload["prompt"]
             execution_context = {
                 "session_key": input_payload.get("session_key")
-                or self._build_session_key(file_id, step),
+                or self._build_session_key(
+                    file_id=file_id,
+                    step=step,
+                    agent_id=prepared_payload["agent_id"],
+                ),
                 "idempotency_key": input_payload.get("idempotency_key")
                 or status.get("run_id"),
                 "run_id": status.get("run_id"),
@@ -240,7 +244,11 @@ class TenderService:
             paths = self.artifact_service.reset_step(file_id, step)
             self._update_agent_artifacts(file_id, step, paths)
 
-        execution_context = self._build_execution_context(file_id, step)
+        execution_context = self._build_execution_context(
+            file_id=file_id,
+            step=step,
+            agent_id=prepared_payload["agent_id"],
+        )
         agent_input_payload = {
             "file_id": file_id,
             "step": step,
@@ -329,14 +337,18 @@ class TenderService:
             },
         )
 
-    def _build_execution_context(self, file_id: str, step: str) -> dict:
+    def _build_execution_context(self, *, file_id: str, step: str, agent_id: str) -> dict:
         return {
-            "session_key": self._build_session_key(file_id, step),
+            "session_key": self._build_session_key(
+                file_id=file_id,
+                step=step,
+                agent_id=agent_id,
+            ),
             "idempotency_key": uuid4().hex,
         }
 
-    def _build_session_key(self, file_id: str, step: str) -> str:
-        return f"tender:{file_id}:{step}"
+    def _build_session_key(self, *, file_id: str, step: str, agent_id: str) -> str:
+        return f"agent:{agent_id}:tender:{file_id}:{step}"
 
     def _update_agent_artifacts(self, file_id: str, step: str, paths: dict[str, str]) -> None:
         record = self.repository.get_record(file_id)

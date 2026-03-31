@@ -269,6 +269,8 @@
 - 当前默认部署方式为本地 loopback Gateway
 - 外部业务 API 不暴露 Gateway 参数
 - 调试信息中的 `debug.provider` 为 `openclaw-gateway`
+- 若本机 Gateway 开启 token 鉴权，则必须配置 `OPENCLAW_GATEWAY_TOKEN`
+- 当前 Python 客户端会使用本机 OpenClaw `device identity` 完成 Gateway 握手
 
 ### 2. 步骤产物
 
@@ -282,8 +284,18 @@
 
 - `step` 固定为 `extract | judge | generate`
 - tender 记录 JSON 会新增 `agent_artifacts` 字段保存这些路径
+- `session_key` 为 `agent:<agent_id>:tender:<file_id>:<step>`
 - 若步骤已成功且产物完整，则重复调用时直接复用
 - 若步骤仍为 `running` 且存在 `run_id`，则优先继续等待，不重复提交
+
+### 3. 当前联调结论
+
+截至 2026-03-31，已完成本机服务层真实联调：
+
+- `health` 调用成功
+- `extract` 成功走 Gateway，`debug.provider == "openclaw-gateway"`
+- `judge` 成功走 Gateway，`debug.provider == "openclaw-gateway"`
+- `generate` 成功走 Gateway，`debug.provider == "openclaw-gateway"`
 
 ## 五、知识库模块
 

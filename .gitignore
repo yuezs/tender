@@ -18,6 +18,7 @@ backend/openclaw_agents/**/USER.md
 storage/tender/raw/*
 storage/tender/parsed/*
 storage/tender/records/*
+storage/tender/agent_runs/*
 storage/knowledge/raw/company_profile/*
 storage/knowledge/raw/qualifications/*
 storage/knowledge/raw/project_cases/*
@@ -27,6 +28,7 @@ storage/knowledge/chunks/*
 
 !storage/tender/raw/.gitkeep
 !storage/tender/parsed/.gitkeep
+!storage/tender/agent_runs/.gitkeep
 !storage/knowledge/raw/company_profile/.gitkeep
 !storage/knowledge/raw/qualifications/.gitkeep
 !storage/knowledge/raw/project_cases/.gitkeep
