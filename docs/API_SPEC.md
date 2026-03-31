@@ -159,7 +159,9 @@
 
 说明：
 
-- 当前为规则提取 + mock 兜底
+- 对外请求与响应结构保持不变
+- 当 `AGENT_USE_REAL_LLM=true` 时，内部优先走本地 OpenClaw Gateway 的 `agent / agent.wait` RPC
+- 失败时仍回退规则提取
 
 ### 5. POST /api/tender/judge
 
@@ -203,7 +205,9 @@
 
 - `judge_agent` 不直接访问数据库
 - 由 orchestrator 先检索 `qualifications + project_cases`
-- 当前输出仍是 mock / 规则版，但知识检索链路是真实的
+- 对外请求与响应结构保持不变
+- 当 `AGENT_USE_REAL_LLM=true` 时，内部优先走本地 OpenClaw Gateway 的 `agent / agent.wait` RPC
+- 失败时仍回退规则判断
 
 ### 6. POST /api/tender/generate
 
@@ -246,9 +250,42 @@
 
 - `generate_agent` 不直接访问数据库
 - 由 orchestrator 先检索 `company_profile + templates + project_cases`
-- 当前输出仍是 mock / 规则版
+- 对外请求与响应结构保持不变
+- 当 `AGENT_USE_REAL_LLM=true` 时，内部优先走本地 OpenClaw Gateway 的 `agent / agent.wait` RPC
+- 失败时仍回退模板生成
 
-## 四、知识库模块
+## 四、Agent 运行说明
+
+### 1. Gateway 配置
+
+后端新增以下环境变量：
+
+- `OPENCLAW_GATEWAY_URL`，默认 `ws://127.0.0.1:18789`
+- `OPENCLAW_GATEWAY_TOKEN`，可选
+- `OPENCLAW_GATEWAY_PASSWORD`，可选
+
+说明：
+
+- 当前默认部署方式为本地 loopback Gateway
+- 外部业务 API 不暴露 Gateway 参数
+- 调试信息中的 `debug.provider` 为 `openclaw-gateway`
+
+### 2. 步骤产物
+
+`extract / judge / generate` 三个步骤都会在本地落地产物：
+
+- `storage/tender/agent_runs/<file_id>/<step>/input.json`
+- `storage/tender/agent_runs/<file_id>/<step>/status.json`
+- `storage/tender/agent_runs/<file_id>/<step>/output.json`
+
+说明：
+
+- `step` 固定为 `extract | judge | generate`
+- tender 记录 JSON 会新增 `agent_artifacts` 字段保存这些路径
+- 若步骤已成功且产物完整，则重复调用时直接复用
+- 若步骤仍为 `running` 且存在 `run_id`，则优先继续等待，不重复提交
+
+## 五、知识库模块
 
 ### 1. GET /api/knowledge/status
 
