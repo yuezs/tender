@@ -1,8 +1,11 @@
+import base64
 import json
 import platform
 import time
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -14,8 +17,24 @@ try:
 except ImportError:  # pragma: no cover - optional until dependency is installed
     create_connection = None
 
+try:
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+except ImportError:  # pragma: no cover - optional until dependency is installed
+    serialization = None
+    ed25519 = None
+
 
 SUCCESS_STATUSES = {"ok", "success", "completed"}
+DEVICE_IDENTITY_VERSION = 1
+ED25519_SPKI_PREFIX = bytes.fromhex("302a300506032b6570032100")
+
+
+@dataclass(frozen=True)
+class DeviceIdentity:
+    device_id: str
+    public_key_pem: str
+    private_key_pem: str
 
 
 class GatewayRpcConnection(AbstractContextManager):
@@ -101,11 +120,51 @@ class GatewayRpcConnection(AbstractContextManager):
         return response_payload
 
     def _build_connect_params(self, nonce: str) -> dict[str, Any]:
+        role = "operator"
+        scopes = ["operator.read", "operator.write", "operator.admin"]
+        platform_name = platform.system().lower() or "unknown"
+        device_identity = self._load_or_create_device_identity()
+        device_token = self._load_device_auth_token(
+            device_id=device_identity.device_id,
+            role=role,
+        )
+
         auth: dict[str, str] = {}
         if settings.openclaw_gateway_token:
             auth["token"] = settings.openclaw_gateway_token
         if settings.openclaw_gateway_password:
             auth["password"] = settings.openclaw_gateway_password
+        if device_token:
+            auth["deviceToken"] = device_token
+        signature_token = (
+            auth.get("token")
+            or auth.get("deviceToken")
+            or auth.get("bootstrapToken")
+            or ""
+        )
+        signed_at_ms = int(time.time() * 1000)
+        device_payload = self._build_device_auth_payload(
+            device_id=device_identity.device_id,
+            client_id="gateway-client",
+            client_mode="backend",
+            role=role,
+            scopes=scopes,
+            signed_at_ms=signed_at_ms,
+            token=signature_token,
+            nonce=nonce,
+            platform_name=platform_name,
+            device_family="",
+        )
+        device = {
+            "id": device_identity.device_id,
+            "publicKey": self._public_key_raw_base64url(device_identity.public_key_pem),
+            "signature": self._sign_device_payload(
+                device_identity.private_key_pem,
+                device_payload,
+            ),
+            "signedAt": signed_at_ms,
+            "nonce": nonce,
+        }
 
         payload: dict[str, Any] = {
             "minProtocol": 3,
@@ -114,19 +173,177 @@ class GatewayRpcConnection(AbstractContextManager):
                 "id": "gateway-client",
                 "displayName": settings.app_name,
                 "version": settings.app_env,
-                "platform": platform.system().lower() or "unknown",
+                "platform": platform_name,
                 "mode": "backend",
                 "instanceId": "ai-tender-assistant",
             },
             "caps": [],
-            "role": "operator",
-            "scopes": ["operator.read", "operator.write", "operator.admin"],
+            "role": role,
+            "scopes": scopes,
+            "device": device,
             "locale": "zh-CN",
             "userAgent": "ai-tender-assistant/backend",
         }
         if auth:
             payload["auth"] = auth
         return payload
+
+    def _load_device_auth_token(self, *, device_id: str, role: str) -> str:
+        auth_store_path = settings.openclaw_state_dir / "identity" / "device-auth.json"
+        if not auth_store_path.exists():
+            return ""
+        try:
+            raw = json.loads(auth_store_path.read_text(encoding="utf-8"))
+        except Exception:
+            return ""
+
+        if str(raw.get("deviceId", "")).strip() != device_id:
+            return ""
+        tokens = raw.get("tokens")
+        if not isinstance(tokens, dict):
+            return ""
+        entry = tokens.get(role)
+        if not isinstance(entry, dict):
+            return ""
+        return str(entry.get("token", "")).strip()
+
+    def _load_or_create_device_identity(self) -> DeviceIdentity:
+        if serialization is None or ed25519 is None:
+            raise BusinessException(
+                "Missing dependency 'cryptography'. Install backend requirements first."
+            )
+
+        identity_path = settings.openclaw_state_dir / "identity" / "device.json"
+        identity_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if identity_path.exists():
+            try:
+                raw = json.loads(identity_path.read_text(encoding="utf-8"))
+                device_id = str(raw.get("deviceId", "")).strip()
+                public_key_pem = str(raw.get("publicKeyPem", "")).strip()
+                private_key_pem = str(raw.get("privateKeyPem", "")).strip()
+                if device_id and public_key_pem and private_key_pem:
+                    derived_id = self._fingerprint_public_key(public_key_pem)
+                    identity = DeviceIdentity(
+                        device_id=derived_id or device_id,
+                        public_key_pem=public_key_pem,
+                        private_key_pem=private_key_pem,
+                    )
+                    if derived_id and derived_id != device_id:
+                        self._write_device_identity(identity_path, identity)
+                    return identity
+            except Exception:
+                pass
+
+        private_key = ed25519.Ed25519PrivateKey.generate()
+        public_key = private_key.public_key()
+        public_key_pem = public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        ).decode("utf-8")
+        private_key_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).decode("utf-8")
+        identity = DeviceIdentity(
+            device_id=self._fingerprint_public_key(public_key_pem),
+            public_key_pem=public_key_pem,
+            private_key_pem=private_key_pem,
+        )
+        self._write_device_identity(identity_path, identity)
+        return identity
+
+    def _write_device_identity(self, identity_path: Path, identity: DeviceIdentity) -> None:
+        stored = {
+            "version": DEVICE_IDENTITY_VERSION,
+            "deviceId": identity.device_id,
+            "publicKeyPem": identity.public_key_pem,
+            "privateKeyPem": identity.private_key_pem,
+            "createdAtMs": int(time.time() * 1000),
+        }
+        identity_path.write_text(
+            f"{json.dumps(stored, ensure_ascii=False, indent=2)}\n",
+            encoding="utf-8",
+        )
+
+    def _build_device_auth_payload(
+        self,
+        *,
+        device_id: str,
+        client_id: str,
+        client_mode: str,
+        role: str,
+        scopes: list[str],
+        signed_at_ms: int,
+        token: str,
+        nonce: str,
+        platform_name: str,
+        device_family: str,
+    ) -> str:
+        return "|".join(
+            [
+                "v3",
+                device_id,
+                client_id,
+                client_mode,
+                role,
+                ",".join(scopes),
+                str(signed_at_ms),
+                token,
+                nonce,
+                self._normalize_device_metadata(platform_name),
+                self._normalize_device_metadata(device_family),
+            ]
+        )
+
+    def _normalize_device_metadata(self, value: str) -> str:
+        return value.strip().lower() if isinstance(value, str) else ""
+
+    def _sign_device_payload(self, private_key_pem: str, payload: str) -> str:
+        private_key = serialization.load_pem_private_key(
+            private_key_pem.encode("utf-8"),
+            password=None,
+        )
+        signature = private_key.sign(payload.encode("utf-8"))
+        return self._base64url(signature)
+
+    def _public_key_raw_base64url(self, public_key_pem: str) -> str:
+        public_key = serialization.load_pem_public_key(public_key_pem.encode("utf-8"))
+        try:
+            raw = public_key.public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw,
+            )
+        except ValueError:
+            raw = public_key.public_bytes(
+                encoding=serialization.Encoding.DER,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+            if raw.startswith(ED25519_SPKI_PREFIX):
+                raw = raw[len(ED25519_SPKI_PREFIX) :]
+        return self._base64url(raw)
+
+    def _fingerprint_public_key(self, public_key_pem: str) -> str:
+        public_key = serialization.load_pem_public_key(public_key_pem.encode("utf-8"))
+        try:
+            raw = public_key.public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw,
+            )
+        except ValueError:
+            raw = public_key.public_bytes(
+                encoding=serialization.Encoding.DER,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+            if raw.startswith(ED25519_SPKI_PREFIX):
+                raw = raw[len(ED25519_SPKI_PREFIX) :]
+        import hashlib
+
+        return hashlib.sha256(raw).hexdigest()
+
+    def _base64url(self, payload: bytes) -> str:
+        return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
 
     def _send_json(self, payload: dict[str, Any]) -> None:
         if self.ws is None:

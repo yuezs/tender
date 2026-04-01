@@ -129,6 +129,8 @@ Backend API (FastAPI)
   - `orchestrator`
 - 对外 API 结构保持不变
 - 内部真实调用路径已切换为本地 OpenClaw Gateway
+- Gateway 握手已补齐本机 `device identity` 与设备 token
+- Agent 会话 key 采用 `agent:<agent_id>:tender:<file_id>:<step>` 形式
 - `extract / judge / generate` 仍保留规则或模板兜底
 - 知识检索与上下文组装是真实链路
 
@@ -266,6 +268,12 @@ orchestrator 负责：
 - 若 `state == running` 且存在 `run_id`，则优先继续 `agent.wait`
 - 若 `state == error` 或产物不完整，则覆盖步骤目录后重跑
 
+当前本机联调状态：
+
+- `health` 已通过 Gateway 客户端真实验证
+- `extract / judge / generate` 已完成服务层真实联调
+- Gateway 若启用 token 鉴权，则后端需显式提供 `OPENCLAW_GATEWAY_TOKEN`
+
 ## 七、当前扩展点
 
 已预留但未完成：
@@ -274,7 +282,7 @@ orchestrator 负责：
 - 招标主链路 MySQL 化
 - 异步 worker
 - 更复杂的检索和重排
-- Gateway 联调稳定性验证与效果调优
+- Gateway HTTP 接口级联调与稳定性验证
 
 ## 八、当前架构边界
 

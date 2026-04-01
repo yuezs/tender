@@ -47,6 +47,8 @@
 - 已补充 `extract / judge / generate` 三步的 `input.json / status.json / output.json` 产物落地
 - 已支持基于 `status.json + output.json` 的成功复用与最小断点续跑
 - 已在 tender 本地记录中增加 `agent_artifacts` 路径信息
+- 已补齐 Gateway `device identity` 握手与设备 token 读取
+- 已完成本机 `health + extract + judge + generate` 服务层真实联调
 
 ### 5. 前端工作台 UI 重做
 
@@ -63,7 +65,7 @@
 - `extract_agent` 仍保留规则提取兜底
 - `judge_agent` 仍保留规则判断兜底
 - `generate_agent` 仍保留模板生成兜底
-- Gateway 真实联调与效果验证仍需继续补齐
+- HTTP 接口级联调与稳定性验证仍需继续补齐
 - PDF 真实解析未完成
 - 知识库前端真实管理功能未完成
 - 招标主链路记录仍为本地 JSON，未切到 MySQL
@@ -72,7 +74,8 @@
 
 ### 1. Agent 真正接入
 
-- 完成 Gateway `health` 与端到端联调
+- 增加 HTTP 接口级回归测试
+- 补自动读取本机 Gateway token 的配置收口
 - 完善 Prompt 模板
 - 加强输出校验、重试与兜底
 
