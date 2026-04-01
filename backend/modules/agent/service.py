@@ -1,4 +1,5 @@
 from core.config import settings
+from modules.agent.collect_agent import CollectAgent
 from modules.agent.extract_agent import ExtractAgent
 from modules.agent.orchestrator import AgentOrchestrator
 
@@ -6,15 +7,37 @@ from modules.agent.orchestrator import AgentOrchestrator
 class AgentService:
     def __init__(self) -> None:
         self.orchestrator = AgentOrchestrator()
+        self.collect_agent = CollectAgent()
         self.extract_agent = ExtractAgent()
 
     def ping(self) -> dict:
+        if settings.discovery_collect_use_openclaw_agent:
+            collect_mode = "openclaw-agent"
+        elif settings.discovery_collect_use_real_ggzy:
+            collect_mode = "ggzy-http"
+        else:
+            collect_mode = "openclaw-llm" if settings.agent_use_real_llm else "fallback-mock"
         return {
             "module": "agent",
             "status": "ready",
-            "mock": not settings.agent_use_real_llm,
-            "available_tasks": ["extract", "judge", "generate"],
+            "mock": collect_mode == "fallback-mock",
+            "collect_mode": collect_mode,
+            "available_tasks": ["collect", "extract", "judge", "generate"],
         }
+
+    def prepare_collect(self, *, source: str) -> dict:
+        return {
+            "agent_id": settings.openclaw_agent_collect,
+            "source": source,
+            "prompt": self.collect_agent.build_prompt(source),
+        }
+
+    def run_collect(self, prepared: dict, *, execution_context: dict | None = None) -> dict:
+        return self.collect_agent.run(
+            source=prepared["source"],
+            prompt=prepared["prompt"],
+            execution_context=execution_context,
+        )
 
     def prepare_extract(self, *, parsed_text: str, fallback_result: dict) -> dict:
         return {

@@ -32,6 +32,49 @@ def build_extract_prompt(parsed_text: str) -> str:
     ).strip()
 
 
+def build_collect_prompt(source: str) -> str:
+    return dedent(
+        f"""
+        You are collect_agent.
+        Collect public project notice leads from {source}.
+
+        Return exactly one JSON object:
+        {{
+          "projects": [
+            {{
+              "source": "ggzy",
+              "source_notice_id": "",
+              "title": "",
+              "notice_type": "",
+              "region": "",
+              "published_at": "",
+              "detail_url": "",
+              "canonical_url": "",
+              "project_code": "",
+              "tender_unit": "",
+              "budget_text": "",
+              "deadline_text": "",
+              "detail_text": "",
+              "qualification_requirements": [],
+              "keywords": []
+            }}
+          ]
+        }}
+
+        Constraints:
+        - Source must be ggzy only
+        - Start from https://www.ggzy.gov.cn/
+        - In the collect workspace, run: python scripts/collect_ggzy.py
+        - Return the exact JSON printed by that script
+        - Do not add markdown, explanations, or commentary
+        - Do not download attachments
+        - Do not output any attachment urls or local file paths
+        - Do not enter the bid-generation workflow
+        - JSON only
+        """
+    ).strip()
+
+
 def build_judge_prompt(tender_fields: dict, knowledge_context: dict) -> str:
     return dedent(
         f"""

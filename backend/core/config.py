@@ -3,6 +3,25 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def _load_local_env() -> None:
+    env_path = Path(__file__).resolve().parents[1] / ".env"
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        os.environ[key] = value.strip().strip('"').strip("'")
+
+
+_load_local_env()
+
+
 def _get_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -31,6 +50,7 @@ class Settings:
     openclaw_agent_extract: str = os.getenv("OPENCLAW_AGENT_EXTRACT", "tender-extract")
     openclaw_agent_judge: str = os.getenv("OPENCLAW_AGENT_JUDGE", "tender-judge")
     openclaw_agent_generate: str = os.getenv("OPENCLAW_AGENT_GENERATE", "tender-generate")
+    openclaw_agent_collect: str = os.getenv("OPENCLAW_AGENT_COLLECT", "tender-collect")
     openclaw_model_default: str = os.getenv("OPENCLAW_MODEL_DEFAULT", "openai-codex/gpt-5.4")
     openclaw_state_dir: Path = Path(
         os.getenv("OPENCLAW_STATE_DIR", str(Path.home() / ".openclaw"))
@@ -38,6 +58,23 @@ class Settings:
     openclaw_gateway_url: str = os.getenv("OPENCLAW_GATEWAY_URL", "ws://127.0.0.1:18789")
     openclaw_gateway_token: str = os.getenv("OPENCLAW_GATEWAY_TOKEN", "").strip()
     openclaw_gateway_password: str = os.getenv("OPENCLAW_GATEWAY_PASSWORD", "").strip()
+    discovery_source_enabled_ggzy: bool = _get_bool("DISCOVERY_SOURCE_ENABLED_GGZY", True)
+    discovery_collect_use_openclaw_agent: bool = _get_bool(
+        "DISCOVERY_COLLECT_USE_OPENCLAW_AGENT",
+        True,
+    )
+    discovery_collect_use_real_ggzy: bool = _get_bool("DISCOVERY_COLLECT_USE_REAL_GGZY", True)
+    discovery_ggzy_list_url: str = os.getenv("DISCOVERY_GGZY_LIST_URL", "https://www.ggzy.gov.cn/")
+    discovery_ggzy_max_projects: int = int(os.getenv("DISCOVERY_GGZY_MAX_PROJECTS", "12"))
+    discovery_ggzy_timeout_seconds: int = int(
+        os.getenv("DISCOVERY_GGZY_TIMEOUT_SECONDS", "20")
+    )
+    discovery_ggzy_budget_seconds: int = int(
+        os.getenv("DISCOVERY_GGZY_BUDGET_SECONDS", "95")
+    )
+    discovery_ggzy_detail_text_limit: int = int(
+        os.getenv("DISCOVERY_GGZY_DETAIL_TEXT_LIMIT", "2000")
+    )
 
     project_root: Path = Path(__file__).resolve().parents[2]
     storage_root: Path = Path(__file__).resolve().parents[2] / "storage"

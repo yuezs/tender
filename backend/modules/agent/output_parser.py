@@ -22,6 +22,38 @@ def _normalize_list(value: object) -> list[str]:
     return []
 
 
+def _normalize_projects(value: object) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+
+    normalized: list[dict] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        normalized.append(
+            {
+                "source": _normalize_text(item.get("source"), "ggzy"),
+                "source_notice_id": _normalize_text(item.get("source_notice_id")),
+                "title": _normalize_text(item.get("title")),
+                "notice_type": _normalize_text(item.get("notice_type")),
+                "region": _normalize_text(item.get("region")),
+                "published_at": _normalize_text(item.get("published_at")),
+                "detail_url": _normalize_text(item.get("detail_url")),
+                "canonical_url": _normalize_text(item.get("canonical_url")),
+                "project_code": _normalize_text(item.get("project_code")),
+                "tender_unit": _normalize_text(item.get("tender_unit")),
+                "budget_text": _normalize_text(item.get("budget_text")),
+                "deadline_text": _normalize_text(item.get("deadline_text")),
+                "detail_text": _normalize_text(item.get("detail_text")),
+                "qualification_requirements": _normalize_list(
+                    item.get("qualification_requirements")
+                ),
+                "keywords": _normalize_list(item.get("keywords")),
+            }
+        )
+    return normalized
+
+
 def _build_knowledge_used(knowledge_context: dict) -> list[dict]:
     references = []
     seen: set[tuple[str, str, str]] = set()
@@ -91,4 +123,10 @@ def ensure_generate_result(raw_result: dict, knowledge_context: dict, prompt: st
         ),
         "knowledge_used": _build_knowledge_used(knowledge_context),
         "prompt_preview": prompt[:1200],
+    }
+
+
+def ensure_collect_result(raw_result: dict) -> dict:
+    return {
+        "projects": _normalize_projects(raw_result.get("projects")),
     }
