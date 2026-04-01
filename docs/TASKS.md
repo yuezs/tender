@@ -1,103 +1,89 @@
 # 开发任务状态
 
-本文档记录当前项目任务的真实进度。
+本文档记录当前项目的真实进度。
 
-## 一、已完成
+## 已完成
 
 ### 1. 项目骨架
 
-- 已初始化 frontend：Next.js + TypeScript
-- 已初始化 backend：FastAPI
-- 已建立 backend 分层目录
-- 已实现统一 JSON 返回结构
-- 已实现 `/api/health`
+- 已初始化 `frontend`，使用 Next.js + TypeScript。
+- 已初始化 `backend`，使用 FastAPI。
+- 已按模块划分后端目录结构。
+- 已提供统一 JSON 返回结构。
+- 已提供 `/api/health`。
 
-### 2. 招标主链路 MVP
+### 2. 招标处理主链路 MVP
 
-- 已实现招标文件上传接口
-- 已实现文件本地保存
-- 已实现 `txt / docx` 文本解析
-- 已实现 `/parse`
-- 已实现 `/extract`
-- 已实现 `/judge`
-- 已实现 `/generate`
-- 已完成前后端最小联调
+- 已支持招标文件上传。
+- 已支持本地文件存储。
+- 已支持 `txt / docx` 文本解析。
+- 已提供 `/api/tender/parse`。
+- 已提供 `/api/tender/extract`。
+- 已提供 `/api/tender/judge`。
+- 已提供 `/api/tender/generate`。
+- 已完成前后端最小联调。
 
 ### 3. 简易知识库第一版
 
-- 已创建 `knowledge_documents`
-- 已创建 `knowledge_chunks`
-- 已实现知识文档上传接口
-- 已实现知识文档列表接口
-- 已实现文档处理接口
-- 已实现简单检索接口
+- 已创建 `knowledge_documents`。
+- 已创建 `knowledge_chunks`。
+- 已支持知识文档上传、列表、处理和简单检索。
+- 已将知识片段接入 `judge_agent` 和 `generate_agent`。
 
-### 4. 知识库与 Agent 链路接入
+### 4. OpenClaw Gateway 接入
 
-- 已实现 orchestrator 根据任务类型选择知识来源
-- 已实现 `judge_agent` 使用 `qualifications + project_cases`
-- 已实现 `generate_agent` 使用 `company_profile + templates + project_cases`
-- 已实现知识上下文组装
-- 已实现结构化结果返回
+- 已将 `extract / judge / generate` 从本地 CLI 子进程切到 OpenClaw Gateway WebSocket RPC。
+- 已支持 `input.json / status.json / output.json` 产物落地。
+- 已支持最小成功复用和失败兜底。
+- 已补齐 `device identity` 握手及 token 读取。
 
-### 5. OpenClaw Gateway 接入
+### 5. 项目发现前置层
 
-- 已将 Agent 调用从 CLI 子进程切换到本地 OpenClaw Gateway WebSocket RPC
-- 已保持 `/api/tender/parse|extract|judge|generate` 的请求响应结构不变
-- 已补充 `extract / judge / generate` 三步的 `input.json / status.json / output.json` 产物落地
-- 已支持基于 `status.json + output.json` 的成功复用与最小断点续跑
-- 已在 tender 本地记录中增加 `agent_artifacts` 路径信息
-- 已补齐 Gateway `device identity` 握手与设备 token 读取
-- 已完成本机 `health + extract + judge + generate` 服务层真实联调
+- 已新增 discovery 模块，支持手动触发 `ggzy` 项目采集。
+- 已新增 `project_discovery_runs` 和 `project_leads` 两张表。
+- 已新增 `/api/discovery/status`、`/api/discovery/runs`、`/api/discovery/projects`、`/api/discovery/projects/{lead_id}`。
+- 已新增前端 `/discovery` 列表页和 `/discovery/[leadId]` 详情页。
+- 已将项目发现入口加入首页和侧边导航。
+- 已接入 `collect_agent`，并注册 `tender-collect` OpenClaw agent。
 
-### 5. 前端工作台 UI 重做
+### 6. discovery 120 秒控制与超时修复
 
-- 已引入 Tailwind CSS
-- 已重做左侧导航工作台布局
-- 已重做首页
-- 已重做招标上传页
-- 已重做结果页
-- 已重做知识库页面空壳
-- 已验证前端 `npm run build` 通过
+- 已将 `ggzy` 采集默认候选数收敛到 `5`。
+- 已将单次页面请求默认超时收敛到 `8s`。
+- 已新增内部采集预算 `95s`，只返回预算内抓取完成的项目。
+- 已将 `detail_text` 默认截断到 `2000` 字，降低会话收尾压力。
+- 已修复 `agent.wait` 超时后仍可从 session 回收结果的问题，避免 OpenClaw UI 已有返回但后端误判失败。
+- 已实测通过 `openclaw-agent` 跑通 discovery 采集，成功 run 可见 `provider = openclaw-gateway` 且 `used_fallback = false`。
 
-## 二、当前仍是 MVP / Mock
+## 当前仍是 MVP / 边界控制
 
-- `extract_agent` 仍保留规则提取兜底
-- `judge_agent` 仍保留规则判断兜底
-- `generate_agent` 仍保留模板生成兜底
-- HTTP 接口级联调与稳定性验证仍需继续补齐
-- PDF 真实解析未完成
-- 知识库前端真实管理功能未完成
-- 招标主链路记录仍为本地 JSON，未切到 MySQL
+- discovery 当前只支持 `ggzy` 单站手动采集。
+- discovery 不下载附件，不解析附件，不自动进入写标书主链路。
+- discovery 推荐逻辑当前基于规则评分加知识库命中，不新增独立评分 agent。
+- 招标文件 `pdf` 真实解析仍未补齐。
+- 知识库前端管理能力仍较轻量。
+- 当前主链路与 discovery 记录仍主要以本地文件和 MySQL 组合保存，不做复杂工作流。
 
-## 三、下一阶段任务
+## 下一阶段任务
 
-### 1. Agent 真正接入
+### 1. discovery
 
-- 增加 HTTP 接口级回归测试
-- 补自动读取本机 Gateway token 的配置收口
-- 完善 Prompt 模板
-- 加强输出校验、重试与兜底
+- 补充更多筛选维度和列表体验。
+- 评估是否增加更多公开站点，但保持单次迭代可控。
+- 增加 discovery 到主链路的明确人工确认入口，而不是自动推进。
 
-### 2. 文件能力补齐
+### 2. 招标文件能力
 
-- 增加 PDF 真实解析
-- 评估 OCR 是否需要纳入后续阶段
+- 补齐 `pdf` 真正解析能力。
+- 评估是否需要 OCR。
 
-### 3. 知识库前端
+### 3. 知识库
 
-- 增加知识文档上传界面
-- 增加知识文档列表页
-- 增加处理状态展示
-- 增加检索调试页
+- 完善资料中心页面。
+- 增加文档详情和片段预览。
 
-### 4. 数据持久化收口
+### 4. 工程质量
 
-- 将招标主链路记录迁移到 MySQL
-- 明确表结构与迁移策略
-
-### 5. 工程质量
-
-- 增加接口测试
-- 增加关键流程回归测试
-- 增加日志与错误排查指引
+- 增加接口测试。
+- 增加关键流程回归测试。
+- 增加更多日志和排障说明。

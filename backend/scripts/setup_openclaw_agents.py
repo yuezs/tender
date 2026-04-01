@@ -11,6 +11,7 @@ OPENCLAW_DIR = BACKEND_DIR / "openclaw_agents"
 OPENCLAW_COMMAND = "openclaw.ps1" if os.name == "nt" else "openclaw"
 MODEL = "openai-codex/gpt-5.4"
 AGENTS = {
+    "tender-collect": OPENCLAW_DIR / "collect",
     "tender-extract": OPENCLAW_DIR / "extract",
     "tender-judge": OPENCLAW_DIR / "judge",
     "tender-generate": OPENCLAW_DIR / "generate",

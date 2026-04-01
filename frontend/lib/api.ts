@@ -5,6 +5,12 @@ import {
   ParseTenderResponse,
   UploadTenderResponse
 } from "@/types/tender";
+import {
+  DiscoveryProjectDetail,
+  DiscoveryProjectListResponse,
+  DiscoveryRunListResponse,
+  DiscoveryRunResponse
+} from "@/types/discovery";
 
 type ApiEnvelope<T> = {
   success: boolean;
@@ -61,4 +67,52 @@ export function judgeTender(fileId: string) {
 
 export function generateTender(fileId: string) {
   return postByFileId<GenerateTenderResponse>("/api/tender/generate", fileId);
+}
+
+function buildQueryString(params: Record<string, string | number | boolean | undefined>) {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === "" || value === false) {
+      return;
+    }
+    search.set(key, String(value));
+  });
+  const query = search.toString();
+  return query ? `?${query}` : "";
+}
+
+export async function runDiscoveryCollection(source = "ggzy"): Promise<DiscoveryRunResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/discovery/runs`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ source })
+  });
+
+  return parseResponse<DiscoveryRunResponse>(response);
+}
+
+export async function listDiscoveryRuns(): Promise<DiscoveryRunListResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/discovery/runs`);
+  return parseResponse<DiscoveryRunListResponse>(response);
+}
+
+export async function listDiscoveryProjects(params: {
+  keyword?: string;
+  region?: string;
+  notice_type?: string;
+  recommendation_level?: string;
+  recommended_only?: boolean;
+  page?: number;
+  page_size?: number;
+}): Promise<DiscoveryProjectListResponse> {
+  const query = buildQueryString(params);
+  const response = await fetch(`${API_BASE_URL}/api/discovery/projects${query}`);
+  return parseResponse<DiscoveryProjectListResponse>(response);
+}
+
+export async function getDiscoveryProjectDetail(leadId: string): Promise<DiscoveryProjectDetail> {
+  const response = await fetch(`${API_BASE_URL}/api/discovery/projects/${leadId}`);
+  return parseResponse<DiscoveryProjectDetail>(response);
 }

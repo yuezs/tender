@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from core.response import success_response
+from modules.discovery.router import router as discovery_router
 from modules.knowledge.router import router as knowledge_router
 from modules.tender.router import router as tender_router
 
@@ -14,3 +15,4 @@ def health_check():
 
 api_router.include_router(tender_router)
 api_router.include_router(knowledge_router)
+api_router.include_router(discovery_router)

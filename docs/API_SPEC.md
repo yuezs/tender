@@ -1,8 +1,8 @@
 # API 设计说明
 
-本文档只描述当前代码已实现的接口。
+本文档描述当前已经实现并可直接联调的接口。
 
-## 一、统一返回结构
+## 统一返回结构
 
 ### 成功
 
@@ -24,15 +24,17 @@
 }
 ```
 
-说明：
+约束：
+- 所有接口均返回 JSON。
+- 所有失败场景都必须提供可读 `message`。
+- 前端统一按 `loading / success / error` 展示状态。
 
-- 所有接口返回 JSON
-- 所有错误必须有可读 `message`
-- 前端基于统一结构展示 `loading / success / error`
-
-## 二、健康检查
+## 健康检查
 
 ### GET /api/health
+
+用途：
+- 检查后端服务是否可用。
 
 返回示例：
 
@@ -46,61 +48,52 @@
 }
 ```
 
-## 三、招标模块
+## 项目发现模块
 
-### 1. GET /api/tender/status
+当前只支持 `ggzy` 单站手动采集。
 
-用途：
-
-- 查看招标模块状态
-
-### 2. POST /api/tender/upload
+### GET /api/discovery/status
 
 用途：
-
-- 上传招标文件
-
-请求类型：
-
-- `multipart/form-data`
-
-请求字段：
-
-- `file`: 必填
-- `source_type`: 可选，默认 `upload`
-- `source_url`: 可选，当前仅预留
-
-说明：
-
-- 当前优先支持 `txt / docx`
-- `pdf` 可上传，但解析阶段尚未真正支持
+- 查看 discovery 模块状态。
+- 查看当前采集模式是否为 `openclaw-agent`、`ggzy-http` 或 `fallback-mock`。
 
 返回示例：
 
 ```json
 {
   "success": true,
-  "message": "招标文件上传成功",
+  "message": "ok",
   "data": {
-    "file_id": "4d1e1f0d8b434b17a1d2f2f1e93b65d4",
-    "file_name": "sample.txt",
-    "source_type": "upload",
-    "extension": "txt"
+    "module": "discovery",
+    "status": "ready",
+    "message": "discovery module is ready for manual project collection",
+    "mock": false,
+    "collect_mode": "openclaw-agent",
+    "available_routes": [
+      "/api/discovery/status",
+      "/api/discovery/runs",
+      "/api/discovery/projects",
+      "/api/discovery/projects/{lead_id}"
+    ],
+    "supported_sources": [
+      "ggzy"
+    ],
+    "repository_ready": true
   }
 }
 ```
 
-### 3. POST /api/tender/parse
+### POST /api/discovery/runs
 
 用途：
-
-- 解析招标文件文本
+- 触发一次手动项目采集。
 
 请求体：
 
 ```json
 {
-  "file_id": "4d1e1f0d8b434b17a1d2f2f1e93b65d4"
+  "source": "ggzy"
 }
 ```
 
@@ -109,333 +102,238 @@
 ```json
 {
   "success": true,
-  "message": "招标文件解析成功",
+  "message": "项目采集执行成功。",
   "data": {
-    "file_id": "4d1e1f0d8b434b17a1d2f2f1e93b65d4",
-    "text": "项目名称：智慧园区平台建设项目"
+    "run_id": "c6309701f5d141eb8a30e3286e3af658",
+    "source": "ggzy",
+    "trigger_type": "manual",
+    "status": "success",
+    "started_at": "2026-04-01 08:48:22",
+    "finished_at": "2026-04-01 08:49:56",
+    "total_found": 2,
+    "total_new": 0,
+    "total_updated": 2,
+    "error_message": ""
   }
 }
 ```
 
-### 4. POST /api/tender/extract
+### GET /api/discovery/runs
 
 用途：
-
-- 抽取核心字段
-
-请求体：
-
-```json
-{
-  "file_id": "4d1e1f0d8b434b17a1d2f2f1e93b65d4"
-}
-```
+- 查看最近采集记录。
 
 返回示例：
 
 ```json
 {
   "success": true,
-  "message": "核心字段抽取成功",
-  "data": {
-    "project_name": "智慧园区平台建设项目",
-    "tender_company": "某市大数据局",
-    "budget": "500万元",
-    "deadline": "2026-04-15 09:00",
-    "qualification_requirements": [
-      "具备软件企业资质证书"
-    ],
-    "delivery_requirements": [
-      "合同签订后90日内完成上线"
-    ],
-    "scoring_focus": [
-      "技术方案",
-      "项目团队",
-      "类似案例"
-    ]
-  }
-}
-```
-
-说明：
-
-- 对外请求与响应结构保持不变
-- 当 `AGENT_USE_REAL_LLM=true` 时，内部优先走本地 OpenClaw Gateway 的 `agent / agent.wait` RPC
-- 失败时仍回退规则提取
-
-### 5. POST /api/tender/judge
-
-用途：
-
-- 输出投标建议
-
-请求体：
-
-```json
-{
-  "file_id": "4d1e1f0d8b434b17a1d2f2f1e93b65d4"
-}
-```
-
-返回示例：
-
-```json
-{
-  "success": true,
-  "message": "投标建议生成成功",
-  "data": {
-    "should_bid": true,
-    "reason": "项目要求与公司能力较匹配，建议继续推进。",
-    "risks": [
-      "交付周期较紧"
-    ],
-    "knowledge_used": [
-      {
-        "category": "qualifications",
-        "document_title": "资质证书汇编",
-        "section_title": "软件企业证书"
-      }
-    ],
-    "prompt_preview": "..."
-  }
-}
-```
-
-说明：
-
-- `judge_agent` 不直接访问数据库
-- 由 orchestrator 先检索 `qualifications + project_cases`
-- 对外请求与响应结构保持不变
-- 当 `AGENT_USE_REAL_LLM=true` 时，内部优先走本地 OpenClaw Gateway 的 `agent / agent.wait` RPC
-- 失败时仍回退规则判断
-
-### 6. POST /api/tender/generate
-
-用途：
-
-- 生成标书初稿
-
-请求体：
-
-```json
-{
-  "file_id": "4d1e1f0d8b434b17a1d2f2f1e93b65d4"
-}
-```
-
-返回示例：
-
-```json
-{
-  "success": true,
-  "message": "标书初稿生成成功",
-  "data": {
-    "company_intro": "...",
-    "project_cases": "...",
-    "implementation_plan": "...",
-    "business_response": "...",
-    "knowledge_used": [
-      {
-        "category": "company_profile",
-        "document_title": "公司介绍2026版",
-        "section_title": "核心能力"
-      }
-    ],
-    "prompt_preview": "..."
-  }
-}
-```
-
-说明：
-
-- `generate_agent` 不直接访问数据库
-- 由 orchestrator 先检索 `company_profile + templates + project_cases`
-- 对外请求与响应结构保持不变
-- 当 `AGENT_USE_REAL_LLM=true` 时，内部优先走本地 OpenClaw Gateway 的 `agent / agent.wait` RPC
-- 失败时仍回退模板生成
-
-## 四、Agent 运行说明
-
-### 1. Gateway 配置
-
-后端新增以下环境变量：
-
-- `OPENCLAW_GATEWAY_URL`，默认 `ws://127.0.0.1:18789`
-- `OPENCLAW_GATEWAY_TOKEN`，可选
-- `OPENCLAW_GATEWAY_PASSWORD`，可选
-
-说明：
-
-- 当前默认部署方式为本地 loopback Gateway
-- 外部业务 API 不暴露 Gateway 参数
-- 调试信息中的 `debug.provider` 为 `openclaw-gateway`
-- 若本机 Gateway 开启 token 鉴权，则必须配置 `OPENCLAW_GATEWAY_TOKEN`
-- 当前 Python 客户端会使用本机 OpenClaw `device identity` 完成 Gateway 握手
-
-### 2. 步骤产物
-
-`extract / judge / generate` 三个步骤都会在本地落地产物：
-
-- `storage/tender/agent_runs/<file_id>/<step>/input.json`
-- `storage/tender/agent_runs/<file_id>/<step>/status.json`
-- `storage/tender/agent_runs/<file_id>/<step>/output.json`
-
-说明：
-
-- `step` 固定为 `extract | judge | generate`
-- tender 记录 JSON 会新增 `agent_artifacts` 字段保存这些路径
-- `session_key` 为 `agent:<agent_id>:tender:<file_id>:<step>`
-- 若步骤已成功且产物完整，则重复调用时直接复用
-- 若步骤仍为 `running` 且存在 `run_id`，则优先继续等待，不重复提交
-
-### 3. 当前联调结论
-
-截至 2026-03-31，已完成本机服务层真实联调：
-
-- `health` 调用成功
-- `extract` 成功走 Gateway，`debug.provider == "openclaw-gateway"`
-- `judge` 成功走 Gateway，`debug.provider == "openclaw-gateway"`
-- `generate` 成功走 Gateway，`debug.provider == "openclaw-gateway"`
-
-## 五、知识库模块
-
-### 1. GET /api/knowledge/status
-
-用途：
-
-- 查看知识库模块状态
-
-### 2. POST /api/knowledge/documents/upload
-
-用途：
-
-- 上传知识文档
-
-请求类型：
-
-- `multipart/form-data`
-
-请求字段：
-
-- `file`: 必填
-- `title`: 必填
-- `category`: 必填
-- `tags`: 可选，逗号分隔字符串
-- `industry`: 可选，逗号分隔字符串
-
-返回示例：
-
-```json
-{
-  "success": true,
-  "message": "知识文档上传成功",
-  "data": {
-    "document_id": "1db0e7717ad44b35a8c3187dcaf3b8ee",
-    "title": "公司介绍2026版",
-    "category": "company_profile"
-  }
-}
-```
-
-### 3. GET /api/knowledge/documents
-
-用途：
-
-- 获取知识文档列表
-
-查询参数：
-
-- `category`: 可选
-- `status`: 可选
-
-返回示例：
-
-```json
-{
-  "success": true,
-  "message": "知识文档列表获取成功",
+  "message": "项目采集记录获取成功。",
   "data": {
     "items": [
       {
-        "document_id": "1db0e7717ad44b35a8c3187dcaf3b8ee",
-        "title": "公司介绍2026版",
-        "category": "company_profile",
-        "file_name": "company_profile.txt",
-        "tags": ["公司", "能力", "案例"],
-        "industry": ["政务"],
-        "status": "processed",
-        "chunk_count": 5,
-        "created_at": "2026-03-31T03:00:00",
-        "updated_at": "2026-03-31T03:01:00"
+        "run_id": "c6309701f5d141eb8a30e3286e3af658",
+        "source": "ggzy",
+        "trigger_type": "manual",
+        "status": "success",
+        "started_at": "2026-04-01 08:48:22",
+        "finished_at": "2026-04-01 08:49:56",
+        "total_found": 2,
+        "total_new": 0,
+        "total_updated": 2,
+        "error_message": ""
       }
     ]
   }
 }
 ```
 
-### 4. POST /api/knowledge/documents/{document_id}/process
+### GET /api/discovery/projects
 
 用途：
+- 查看 discovery 线索池。
+- 支持关键字、地区、公告类型、推荐等级和是否仅看推荐项目筛选。
 
-- 解析文档并切块入库
+查询参数：
+- `keyword`
+- `region`
+- `notice_type`
+- `recommendation_level`
+- `recommended_only`
+- `page`
+- `page_size`
 
 返回示例：
 
 ```json
 {
   "success": true,
-  "message": "知识文档处理成功",
+  "message": "项目线索列表获取成功。",
   "data": {
-    "document_id": "1db0e7717ad44b35a8c3187dcaf3b8ee",
-    "chunk_count": 5,
-    "status": "processed"
-  }
-}
-```
-
-### 5. POST /api/knowledge/retrieve
-
-用途：
-
-- 检索知识片段
-
-请求体：
-
-```json
-{
-  "category": "project_cases",
-  "query": "智慧园区",
-  "tags": ["案例"],
-  "industry": ["政务"],
-  "limit": 5
-}
-```
-
-返回示例：
-
-```json
-{
-  "success": true,
-  "message": "知识检索成功",
-  "data": {
-    "chunks": [
+    "items": [
       {
-        "id": "c47e0b87dd4d47f0b01d15709a0ef4af",
-        "document_id": "1db0e7717ad44b35a8c3187dcaf3b8ee",
-        "document_title": "案例库",
-        "section_title": "智慧园区项目案例",
-        "content": "..."
+        "lead_id": "0afb50dc314b40d28cf7e3d2be960e9f",
+        "source": "ggzy",
+        "title": "某项目公开招标公告",
+        "notice_type": "公开招标公告",
+        "region": "甘肃",
+        "published_at": "2026-04-01 00:00:00",
+        "project_code": "ABC20260401",
+        "tender_unit": "某采购单位",
+        "budget_text": "500万元",
+        "deadline_text": "2026-04-08 09:00:00",
+        "recommendation_score": 70,
+        "recommendation_level": "medium",
+        "recommendation_reasons": [
+          "命中企业资质材料，可支撑资格匹配说明。"
+        ]
       }
-    ]
+    ],
+    "total": 1,
+    "page": 1,
+    "page_size": 10
   }
 }
 ```
+
+### GET /api/discovery/projects/{lead_id}
+
+用途：
+- 查看单个项目详情、抽取结果、推荐结果和详情正文。
+
+返回示例：
+
+```json
+{
+  "success": true,
+  "message": "项目线索详情获取成功。",
+  "data": {
+    "lead_id": "0afb50dc314b40d28cf7e3d2be960e9f",
+    "source": "ggzy",
+    "title": "某项目公开招标公告",
+    "notice_type": "公开招标公告",
+    "region": "甘肃",
+    "published_at": "2026-04-01 00:00:00",
+    "detail_url": "https://www.ggzy.gov.cn/...",
+    "canonical_url": "https://www.ggzy.gov.cn/...",
+    "extract_result": {
+      "project_name": "某项目",
+      "tender_unit": "某采购单位",
+      "project_code": "ABC20260401",
+      "region": "甘肃",
+      "budget_text": "500万元",
+      "deadline_text": "2026-04-08 09:00:00",
+      "notice_type": "公开招标公告",
+      "published_at": "2026-04-01 00:00:00",
+      "qualification_requirements": [
+        "具备相关资质"
+      ],
+      "keywords": [
+        "智慧园区"
+      ]
+    },
+    "match_result": {
+      "recommendation_score": 70,
+      "recommendation_level": "medium",
+      "recommendation_reasons": [
+        "命中企业资质材料，可支撑资格匹配说明。"
+      ],
+      "risks": [
+        "预算信息缺失，需要补充商务评估。"
+      ],
+      "matched_knowledge": [
+        {
+          "category": "qualifications",
+          "document_title": "资质证书汇编",
+          "section_title": "软件企业证书"
+        }
+      ]
+    },
+    "detail_text": "..."
+  }
+}
+```
+
+## 招标处理主链路
+
+### POST /api/tender/upload
+
+用途：
+- 上传招标文件。
+
+请求类型：
+- `multipart/form-data`
+
+请求字段：
+- `file`
+- `source_type`
+- `source_url`
 
 说明：
+- 当前优先支持 `txt / docx`。
+- `pdf` 上传入口保留，但真实解析仍未补齐。
 
-- 当前检索方式为：
-  - 分类过滤
-  - tags 过滤
-  - industry 过滤
-  - `LIKE` 关键词匹配
-- 当前不做向量检索
+### POST /api/tender/parse
+
+用途：
+- 解析招标文件文本。
+
+### POST /api/tender/extract
+
+用途：
+- 抽取核心字段。
+
+### POST /api/tender/judge
+
+用途：
+- 输出投标建议。
+
+### POST /api/tender/generate
+
+用途：
+- 生成标书初稿。
+
+说明：
+- `extract / judge / generate` 对外响应结构保持稳定。
+- 当启用真实 Agent 时，内部优先经由 OpenClaw Gateway 调用。
+- 失败时仍保留规则或模板兜底。
+
+## OpenClaw 与产物
+
+### 关键环境变量
+
+- `OPENCLAW_GATEWAY_URL`
+- `OPENCLAW_GATEWAY_TOKEN`
+- `OPENCLAW_GATEWAY_PASSWORD`
+- `OPENCLAW_AGENT_COLLECT`
+- `OPENCLAW_AGENT_EXTRACT`
+- `OPENCLAW_AGENT_JUDGE`
+- `OPENCLAW_AGENT_GENERATE`
+
+### discovery 相关环境变量
+
+- `DISCOVERY_SOURCE_ENABLED_GGZY`
+- `DISCOVERY_COLLECT_USE_OPENCLAW_AGENT`
+- `DISCOVERY_COLLECT_USE_REAL_GGZY`
+- `DISCOVERY_GGZY_LIST_URL`
+- `DISCOVERY_GGZY_MAX_PROJECTS`
+- `DISCOVERY_GGZY_TIMEOUT_SECONDS`
+- `DISCOVERY_GGZY_BUDGET_SECONDS`
+- `DISCOVERY_GGZY_DETAIL_TEXT_LIMIT`
+
+### discovery 产物路径
+
+- `storage/discovery/agent_runs/<run_id>/input.json`
+- `storage/discovery/agent_runs/<run_id>/status.json`
+- `storage/discovery/agent_runs/<run_id>/output.json`
+- `storage/discovery/leads/<lead_id>/detail.txt`
+- `storage/discovery/leads/<lead_id>/raw_snapshot.json`
+
+### discovery 当前约束
+
+- 只采集 `ggzy.gov.cn`。
+- 不下载附件，不进入写标书主链路。
+- 默认预算控制为 `95s`，默认最大候选项目数为 `5`，默认单请求超时为 `8s`。
+- 只返回预算内抓取完成的项目。
+- `detail_text` 默认截断到 `2000` 字。
+- 当 `agent.wait` 超时但 session 已有结果时，后端会回收 session 中的已生成结果，避免误判失败。

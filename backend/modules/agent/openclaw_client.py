@@ -132,9 +132,9 @@ class GatewayRpcConnection(AbstractContextManager):
         auth: dict[str, str] = {}
         if settings.openclaw_gateway_token:
             auth["token"] = settings.openclaw_gateway_token
-        if settings.openclaw_gateway_password:
+        elif settings.openclaw_gateway_password:
             auth["password"] = settings.openclaw_gateway_password
-        if device_token:
+        elif device_token:
             auth["deviceToken"] = device_token
         signature_token = (
             auth.get("token")
@@ -568,6 +568,15 @@ class OpenClawClient:
         )
         status = str(wait_payload.get("status", "")).strip().lower()
         if status == "timeout":
+            assistant_text = self._load_available_agent_result(
+                connection=connection,
+                agent_id=agent_id,
+                message=message,
+                session_key=session_key,
+                idempotency_key=idempotency_key,
+            )
+            if assistant_text:
+                return assistant_text
             raise BusinessException(
                 f"OpenClaw Gateway request timed out after {settings.openclaw_timeout_seconds}s."
             )
@@ -575,27 +584,13 @@ class OpenClawClient:
             error = str(wait_payload.get("error") or "unknown error").strip()
             raise BusinessException(f"OpenClaw Gateway request failed: {error}")
 
-        cached_payload = connection.request(
-            "agent",
-            self._build_agent_request(
-                agent_id=agent_id,
-                message=message,
-                session_key=session_key,
-                idempotency_key=idempotency_key,
-            ),
+        assistant_text = self._load_available_agent_result(
+            connection=connection,
+            agent_id=agent_id,
+            message=message,
+            session_key=session_key,
+            idempotency_key=idempotency_key,
         )
-        assistant_text = self._extract_payload_text(cached_payload.get("result", {}))
-        if assistant_text:
-            return assistant_text
-
-        transcript = connection.request(
-            "sessions.get",
-            {
-                "key": session_key,
-                "limit": 200,
-            },
-        )
-        assistant_text = self._extract_latest_assistant_text(transcript.get("messages"))
         if assistant_text:
             return assistant_text
 
@@ -633,6 +628,37 @@ class OpenClawClient:
                 texts.append(text)
         return "\n".join(texts).strip()
 
+    def _load_available_agent_result(
+        self,
+        *,
+        connection: GatewayRpcConnection,
+        agent_id: str,
+        message: str,
+        session_key: str,
+        idempotency_key: str,
+    ) -> str:
+        cached_payload = connection.request(
+            "agent",
+            self._build_agent_request(
+                agent_id=agent_id,
+                message=message,
+                session_key=session_key,
+                idempotency_key=idempotency_key,
+            ),
+        )
+        assistant_text = self._extract_payload_text(cached_payload.get("result", {}))
+        if assistant_text and not self._is_timeout_placeholder_text(assistant_text):
+            return assistant_text
+
+        transcript = connection.request(
+            "sessions.get",
+            {
+                "key": session_key,
+                "limit": 200,
+            },
+        )
+        return self._extract_latest_assistant_text(transcript.get("messages"))
+
     def _extract_latest_assistant_text(self, messages: Any) -> str:
         if not isinstance(messages, list):
             return ""
@@ -666,3 +692,7 @@ class OpenClawClient:
             if text:
                 parts.append(text)
         return "\n".join(parts).strip()
+
+    def _is_timeout_placeholder_text(self, text: str) -> bool:
+        candidate = text.strip().lower()
+        return candidate.startswith("request timed out before a response was generated")
