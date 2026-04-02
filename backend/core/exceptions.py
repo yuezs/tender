@@ -2,6 +2,8 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from core.response import error_response
+
 
 class BusinessException(Exception):
     def __init__(self, message: str, status_code: int = 400):
@@ -15,29 +17,21 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def business_exception_handler(_: Request, exc: BusinessException):
         return JSONResponse(
             status_code=exc.status_code,
-            content={
-                "success": False,
-                "message": exc.message,
-            },
+            content=error_response(exc.message),
         )
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(_: Request, exc: RequestValidationError):
+        payload = error_response("request validation failed")
+        payload["errors"] = exc.errors()
         return JSONResponse(
             status_code=422,
-            content={
-                "success": False,
-                "message": "request validation failed",
-                "errors": exc.errors(),
-            },
+            content=payload,
         )
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(_: Request, exc: Exception):
         return JSONResponse(
             status_code=500,
-            content={
-                "success": False,
-                "message": "internal server error",
-            },
+            content=error_response("internal server error"),
         )

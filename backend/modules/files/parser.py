@@ -6,7 +6,7 @@ from core.exceptions import BusinessException
 
 
 def parse_text_file(file_path: Path) -> str:
-    encodings = ["utf-8", "utf-8-sig", "gb18030"]
+    encodings = ["utf-8-sig", "utf-8", "gb18030"]
     for encoding in encodings:
         try:
             return file_path.read_text(encoding=encoding).strip()

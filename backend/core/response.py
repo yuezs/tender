@@ -10,10 +10,8 @@ def success_response(data: Any, message: str = "ok") -> dict[str, Any]:
 
 
 def error_response(message: str, data: Any | None = None) -> dict[str, Any]:
-    payload = {
+    return {
         "success": False,
         "message": message,
+        "data": data if data is not None else {},
     }
-    if data is not None:
-        payload["data"] = data
-    return payload
