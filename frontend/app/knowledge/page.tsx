@@ -143,6 +143,7 @@ export default function KnowledgePage() {
   const [retrieveLimit, setRetrieveLimit] = useState(5);
   const [retrieving, setRetrieving] = useState(false);
   const [retrievedChunks, setRetrievedChunks] = useState<KnowledgeChunkItem[]>([]);
+  const [selectedRetrievedChunk, setSelectedRetrievedChunk] = useState<KnowledgeChunkItem | null>(null);
 
   const processedCount = useMemo(
     () => documents.filter((item) => item.status === "processed").length,
@@ -846,11 +847,22 @@ export default function KnowledgePage() {
               <div className="space-y-3">
                 {retrievedChunks.length ? (
                   retrievedChunks.map((chunk) => (
-                    <article key={chunk.id} className="ui-panel-muted px-4 py-4">
-                      <p className="ui-field-label">{chunk.document_title}</p>
-                      <p className="mt-2 text-sm font-semibold text-ink">{chunk.section_title}</p>
-                      <p className="ui-copy mt-2 whitespace-pre-wrap break-words">{truncateText(chunk.content, 320)}</p>
-                    </article>
+                    <button
+                      key={chunk.id}
+                      type="button"
+                      className="ui-panel-muted block w-full px-4 py-4 text-left transition hover:border-accent/30 hover:bg-accent-soft/40"
+                      onClick={() => setSelectedRetrievedChunk(chunk)}
+                    >
+                      <p className="ui-field-label truncate" title={chunk.document_title}>
+                        {chunk.document_title}
+                      </p>
+                      <p className="mt-2 truncate text-sm font-semibold text-ink" title={chunk.section_title}>
+                        {chunk.section_title}
+                      </p>
+                      <p className="ui-copy mt-2 truncate" title={chunk.content}>
+                        {chunk.content}
+                      </p>
+                    </button>
                   ))
                 ) : (
                   <div className="rounded-2xl border border-dashed border-line bg-surface px-4 py-4 text-sm text-muted">
@@ -890,6 +902,35 @@ export default function KnowledgePage() {
             <div className="overflow-y-auto px-5 py-4">
               <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-muted">
                 {viewingDocument.content}
+              </pre>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedRetrievedChunk ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6"
+          onClick={() => setSelectedRetrievedChunk(null)}
+        >
+          <div
+            className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-line bg-white shadow-panel"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
+              <div className="space-y-2">
+                <p className="ui-field-label">检索结果全文</p>
+                <h2 className="text-lg font-semibold text-ink">{selectedRetrievedChunk.document_title}</h2>
+                <p className="text-sm text-subtle">{selectedRetrievedChunk.section_title}</p>
+              </div>
+              <button className="ui-button-secondary" type="button" onClick={() => setSelectedRetrievedChunk(null)}>
+                关闭
+              </button>
+            </div>
+
+            <div className="overflow-y-auto px-5 py-4">
+              <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-muted">
+                {selectedRetrievedChunk.content}
               </pre>
             </div>
           </div>
