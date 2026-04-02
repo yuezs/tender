@@ -532,18 +532,7 @@ class GgzyCollector:
             "canonical_url",
             "detail_text",
         )
-        if any(not self._clean_text(project.get(field, "")) for field in required_fields):
-            return False
-
-        optional_hits = sum(
-            1
-            for field in ("project_code", "tender_unit", "budget_text", "deadline_text")
-            if self._clean_text(project.get(field, ""))
-        )
-        qualification_requirements = project.get("qualification_requirements")
-        if isinstance(qualification_requirements, list) and qualification_requirements:
-            optional_hits += 1
-        return optional_hits >= 2
+        return not any(not self._clean_text(project.get(field, "")) for field in required_fields)
 
     def _matches_targeting(self, project: dict[str, Any]) -> bool:
         if not self._is_targeted_mode():
