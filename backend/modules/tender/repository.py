@@ -38,6 +38,19 @@ class TenderRepository:
         self._write_record(file_id, record)
         return record
 
+    def find_record_by_document_id(self, document_id: str) -> dict:
+        target_id = str(document_id).strip()
+        if not target_id:
+            raise BusinessException("缺少文档标识。", status_code=400)
+
+        for path in sorted(self.records_dir.glob("*.json")):
+            record = json.loads(path.read_text(encoding="utf-8"))
+            generate_document = record.get("generate_document") or {}
+            if str(generate_document.get("document_id", "")).strip() == target_id:
+                return self._ensure_default_fields(record)
+
+        raise BusinessException("未找到对应的标书文档，请重新生成。", status_code=404)
+
     def _ensure_default_fields(self, record: dict) -> dict:
         agent_artifacts = deepcopy(record.get("agent_artifacts") or {})
         for step in ("extract", "judge", "generate"):

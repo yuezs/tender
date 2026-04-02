@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from core.database import get_db
@@ -47,3 +48,13 @@ def judge_tender(payload: TenderProcessRequest, db: Session = Depends(get_db)):
 @router.post("/generate")
 def generate_tender(payload: TenderProcessRequest, db: Session = Depends(get_db)):
     return success_response(service.generate_tender(db, payload.file_id), message="标书初稿生成成功。")
+
+
+@router.get("/documents/{document_id}/download")
+def download_generated_tender_document(document_id: str):
+    document = service.get_generated_document(document_id)
+    return FileResponse(
+        path=document["storage_path"],
+        filename=document["file_name"],
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )

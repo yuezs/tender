@@ -30,8 +30,24 @@ class TenderJudgeResult(BaseModel):
     risks: list[str]
 
 
+class TenderProposalSections(BaseModel):
+    cover_summary: str = ""
+    table_of_contents: str = ""
+    company_intro: str = ""
+    qualification_response: str = ""
+    project_cases: str = ""
+    implementation_plan: str = ""
+    service_commitment: str = ""
+    business_response: str = ""
+
+
 class TenderGenerateResult(BaseModel):
     company_intro: str
     project_cases: str
     implementation_plan: str
     business_response: str
+    proposal_sections: TenderProposalSections | None = None
+    download_ready: bool = False
+    document_id: str = ""
+    document_file_name: str = ""
+    download_url: str = ""

@@ -12,6 +12,7 @@ from core.exceptions import BusinessException
 from modules.agent.run_artifacts import AgentRunArtifactService
 from modules.agent.service import AgentService
 from modules.files.service import FileService
+from modules.tender.document_service import ProposalDocumentService
 from modules.tender.repository import TenderRepository
 
 
@@ -21,6 +22,7 @@ class TenderService:
         self.file_service = FileService()
         self.agent_service = AgentService()
         self.artifact_service = AgentRunArtifactService()
+        self.document_service = ProposalDocumentService()
 
     def get_module_status(self) -> dict:
         return {
@@ -35,6 +37,7 @@ class TenderService:
                 "/api/tender/extract",
                 "/api/tender/judge",
                 "/api/tender/generate",
+                "/api/tender/documents/{document_id}/download",
             ],
             "repository_ready": self.repository.is_ready(),
         }
@@ -187,7 +190,40 @@ class TenderService:
                 "agent_artifacts": self._load_record_agent_artifacts(file_id),
             },
         )
+        document_payload = self.document_service.export(
+            file_id=file_id,
+            tender_record=updated,
+            generate_result=updated["generate_result"],
+        )
+        generate_result = {
+            **updated["generate_result"],
+            "download_ready": True,
+            "document_id": document_payload["document_id"],
+            "document_file_name": document_payload["file_name"],
+            "download_url": document_payload["download_url"],
+        }
+        updated = self.repository.update_record(
+            file_id,
+            {
+                "generate_result": generate_result,
+                "generate_document": document_payload,
+            },
+        )
         return updated["generate_result"]
+
+    def get_generated_document(self, document_id: str) -> dict:
+        record = self.repository.find_record_by_document_id(document_id)
+        document_payload = record.get("generate_document") or {}
+        storage_path = str(document_payload.get("storage_path", "")).strip()
+        file_name = str(document_payload.get("file_name", "")).strip()
+        if not storage_path or not Path(storage_path).exists():
+            raise BusinessException("标书文档不存在，请重新生成。", status_code=404)
+        if not file_name:
+            file_name = Path(storage_path).name
+        return {
+            "storage_path": storage_path,
+            "file_name": file_name,
+        }
 
     def _run_agent_step(
         self,

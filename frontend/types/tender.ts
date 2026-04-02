@@ -46,6 +46,20 @@ export type GenerateTenderResponse = {
   project_cases: string;
   implementation_plan: string;
   business_response: string;
+  proposal_sections?: {
+    cover_summary: string;
+    table_of_contents: string;
+    company_intro: string;
+    qualification_response: string;
+    project_cases: string;
+    implementation_plan: string;
+    service_commitment: string;
+    business_response: string;
+  };
+  download_ready?: boolean;
+  document_id?: string;
+  document_file_name?: string;
+  download_url?: string;
   knowledge_used?: KnowledgeUsedItem[];
   prompt_preview?: string;
 };
