@@ -23,16 +23,18 @@ class AgentService:
             "available_tasks": ["collect", "extract", "judge", "generate"],
         }
 
-    def prepare_collect(self, *, source: str) -> dict:
+    def prepare_collect(self, *, source: str, targeting: dict | None = None) -> dict:
         return {
             "agent_id": settings.openclaw_agent_collect,
             "source": source,
-            "prompt": self.collect_agent.build_prompt(source),
+            "targeting": targeting or {},
+            "prompt": self.collect_agent.build_prompt(source, targeting or {}),
         }
 
     def run_collect(self, prepared: dict, *, execution_context: dict | None = None) -> dict:
         return self.collect_agent.run(
             source=prepared["source"],
+            targeting=prepared.get("targeting", {}),
             prompt=prepared["prompt"],
             execution_context=execution_context,
         )

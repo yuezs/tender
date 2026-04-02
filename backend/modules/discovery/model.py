@@ -19,6 +19,7 @@ class ProjectDiscoveryRun(Base):
     total_new: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_updated: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    targeting_snapshot: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
 
 
 class ProjectLead(Base):
@@ -41,6 +42,9 @@ class ProjectLead(Base):
     raw_snapshot_path: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     extract_result_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     match_result_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    targeting_match_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0, index=True)
+    profile_key: Mapped[str] = mapped_column(String(128), nullable=False, default="", index=True)
+    profile_title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     recommendation_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0, index=True)
     recommendation_level: Mapped[str] = mapped_column(
         String(32), nullable=False, default="low", index=True

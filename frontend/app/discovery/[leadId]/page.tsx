@@ -37,7 +37,7 @@ export default function DiscoveryDetailPage() {
       try {
         const response = await getDiscoveryProjectDetail(leadId);
         setProject(response);
-        setPageMessage("已加载项目详情，可查看推荐结果并决定是否进入招标处理流程。");
+        setPageMessage("已加载项目详情，可查看方向命中、知识命中和风险说明。");
       } catch (error) {
         const message = error instanceof Error ? error.message : "加载项目详情失败";
         setPageMessage(message);
@@ -52,7 +52,7 @@ export default function DiscoveryDetailPage() {
       <PageHeader
         eyebrow="Discovery Detail"
         title={project?.title ?? "项目详情"}
-        description="当前详情页只展示发现结果、抽取字段和推荐依据，不会自动进入现有写标书主链路。"
+        description="详情页会解释这个项目为什么值得关注：既展示知识支撑，也展示它与当前发现方向的匹配情况。"
         actions={
           <>
             <Link className="ui-button-secondary" href="/discovery">
@@ -72,24 +72,36 @@ export default function DiscoveryDetailPage() {
       ) : (
         <>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="推荐分" value={String(project.match_result.recommendation_score)} helper={levelLabel(project.match_result.recommendation_level)} tone="accent" />
-            <MetricCard label="公告类型" value={project.notice_type || "待识别"} helper={project.published_at || "待识别发布时间"} />
-            <MetricCard label="地区" value={project.region || "待识别"} helper={project.extract_result.project_code || "待识别项目编号"} />
-            <MetricCard label="招标单位" value={project.extract_result.tender_unit || "待识别"} helper={project.extract_result.budget_text || "待识别预算"} />
+            <MetricCard
+              label="推荐分"
+              value={String(project.match_result.recommendation_score)}
+              helper={levelLabel(project.match_result.recommendation_level)}
+              tone="accent"
+            />
+            <MetricCard
+              label="方向命中分"
+              value={String(project.match_result.targeting_match_score)}
+              helper={project.match_result.profile_title || "未绑定方向"}
+            />
+            <MetricCard
+              label="知识支撑分"
+              value={String(project.match_result.knowledge_support_score)}
+              helper={`${project.match_result.matched_knowledge.length} 条知识命中`}
+            />
+            <MetricCard
+              label="招标单位"
+              value={project.extract_result.tender_unit || "待识别"}
+              helper={project.extract_result.budget_text || "待识别预算"}
+            />
           </div>
 
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.28fr)_360px]">
             <div className="space-y-6">
               <PanelCard
                 title="项目原文与入口"
-                description="系统保留原文入口，用户确认项目后再手动进入招标处理流程。"
+                description="系统保留原文入口，用户确认项目后再手工进入招标处理流程。"
                 actions={
-                  <a
-                    className="ui-button-secondary"
-                    href={project.detail_url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
+                  <a className="ui-button-secondary" href={project.detail_url} target="_blank" rel="noreferrer">
                     查看原文
                   </a>
                 }
@@ -102,12 +114,63 @@ export default function DiscoveryDetailPage() {
                 </div>
               </PanelCard>
 
-              <PanelCard title="详情正文" description="本期只展示列表和详情页采集到的正文文本，不处理附件。">
+              <PanelCard title="详情正文" description="本期只展示采集到的正文文本，不处理附件。">
                 <pre className="ui-document-block">{project.detail_text || "暂无详情正文"}</pre>
               </PanelCard>
             </div>
 
             <div className="space-y-6">
+              <PanelCard title="为什么这是关键项目" description="先看它与当前发现方向的匹配，再看知识支撑是否足够。">
+                <div className="space-y-4">
+                  <div className="rounded-2xl border bg-surface px-4 py-4">
+                    <p className="ui-field-label">方向命中</p>
+                    <p className="mt-3 text-sm font-semibold text-ink">
+                      {project.match_result.profile_title || "当前不是定向采集方向命中项目"}
+                    </p>
+                    <ul className="mt-3 space-y-2 text-sm leading-6 text-muted">
+                      {project.match_result.targeting_reasons.map((item) => (
+                        <li key={item}>- {item}</li>
+                      ))}
+                    </ul>
+                    <div className="mt-3 space-y-2 text-xs text-subtle">
+                      <p>命中关键词：{project.match_result.matched_keywords.join("、") || "无"}</p>
+                      <p>命中地区：{project.match_result.matched_regions.join("、") || "无"}</p>
+                      <p>
+                        命中资质词：
+                        {project.match_result.matched_qualification_terms.join("、") || "无"}
+                      </p>
+                      <p>命中行业词：{project.match_result.matched_industry_terms.join("、") || "无"}</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border bg-surface px-4 py-4">
+                    <p className="ui-field-label">知识支撑</p>
+                    <ul className="mt-3 space-y-2 text-sm leading-6 text-muted">
+                      {project.match_result.recommendation_reasons.length ? (
+                        project.match_result.recommendation_reasons.map((item) => <li key={item}>- {item}</li>)
+                      ) : (
+                        <li>- 暂无推荐理由</li>
+                      )}
+                    </ul>
+                  </div>
+
+                  <div className="rounded-2xl border bg-surface px-4 py-4">
+                    <p className="ui-field-label">资料缺口与风险</p>
+                    <ul className="mt-3 space-y-2 text-sm leading-6 text-muted">
+                      {project.match_result.knowledge_gaps.map((item) => (
+                        <li key={item}>- {item}</li>
+                      ))}
+                      {project.match_result.risks.map((item) => (
+                        <li key={item}>- {item}</li>
+                      ))}
+                      {!project.match_result.knowledge_gaps.length && !project.match_result.risks.length ? (
+                        <li>- 暂无明显缺口或风险提示</li>
+                      ) : null}
+                    </ul>
+                  </div>
+                </div>
+              </PanelCard>
+
               <PanelCard title="抽取字段" description="缺失字段不会阻断入池，但需要人工复核。">
                 <div className="space-y-4">
                   <div className="rounded-2xl border bg-surface px-4 py-4 text-sm leading-6 text-muted">
@@ -130,32 +193,7 @@ export default function DiscoveryDetailPage() {
                 </div>
               </PanelCard>
 
-              <PanelCard title="推荐理由与风险" description="推荐逻辑基于规则评分和现有知识库命中结果。">
-                <div className="space-y-4">
-                  <div className="rounded-2xl border bg-surface px-4 py-4">
-                    <p className="ui-field-label">推荐理由</p>
-                    <ul className="mt-3 space-y-2 text-sm leading-6 text-muted">
-                      {project.match_result.recommendation_reasons.length ? (
-                        project.match_result.recommendation_reasons.map((item) => <li key={item}>- {item}</li>)
-                      ) : (
-                        <li>- 暂无推荐理由</li>
-                      )}
-                    </ul>
-                  </div>
-                  <div className="rounded-2xl border bg-surface px-4 py-4">
-                    <p className="ui-field-label">风险提示</p>
-                    <ul className="mt-3 space-y-2 text-sm leading-6 text-muted">
-                      {project.match_result.risks.length ? (
-                        project.match_result.risks.map((item) => <li key={item}>- {item}</li>)
-                      ) : (
-                        <li>- 暂无风险提示</li>
-                      )}
-                    </ul>
-                  </div>
-                </div>
-              </PanelCard>
-
-              <PanelCard title="知识命中" description="用于解释为什么系统会给出当前推荐分。">
+              <PanelCard title="知识命中" description="用于解释系统为什么会给出当前推荐结论。">
                 {project.match_result.matched_knowledge.length ? (
                   <div className="space-y-3">
                     {project.match_result.matched_knowledge.map((item) => (
@@ -170,7 +208,10 @@ export default function DiscoveryDetailPage() {
                     ))}
                   </div>
                 ) : (
-                  <EmptyState title="没有命中知识片段" description="可以先去资料中心补充资质、案例或公司介绍。" />
+                  <EmptyState
+                    title="没有命中知识片段"
+                    description="可以先去资料中心补充资质、案例或公司介绍。"
+                  />
                 )}
               </PanelCard>
             </div>

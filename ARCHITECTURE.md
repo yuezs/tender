@@ -10,6 +10,12 @@ Frontend (Next.js + TypeScript + Tailwind)
         v
 Backend API (FastAPI)
         |
+        +-- Discovery Module
+        |     |
+        |     +-- Knowledge-driven profile builder
+        |     +-- collect_agent -> OpenClaw Gateway
+        |     +-- Lead repository (MySQL + Local Storage)
+        |
         +-- Tender Module
         |     |
         |     +-- Files Module
@@ -43,6 +49,8 @@ Backend API (FastAPI)
 当前页面：
 
 - `/`
+- `/discovery`
+- `/discovery/{leadId}`
 - `/tender`
 - `/results`
 - `/knowledge`
@@ -120,6 +128,7 @@ Backend API (FastAPI)
 职责：
 
 - 维护 Prompt 模板
+- 驱动 `collect_agent`
 - 编排知识上下文
 - 驱动 `extract_agent / judge_agent / generate_agent`
 - 通过本地 OpenClaw Gateway 发起同步 Agent RPC
@@ -127,7 +136,8 @@ Backend API (FastAPI)
 
 当前状态：
 
-- 当前只保留 4 个 Agent：
+- 当前只保留 5 个 Agent：
+  - `collect_agent`
   - `extract_agent`
   - `judge_agent`
   - `generate_agent`
@@ -137,7 +147,32 @@ Backend API (FastAPI)
 - Gateway 握手已补齐本机 `device identity` 与设备 token
 - Agent 会话 key 采用 `agent:<agent_id>:tender:<file_id>:<step>` 形式
 - `extract / judge / generate` 强制走本地 OpenClaw Gateway，失败直接返回错误
+- `collect_agent` 也强制走本地 OpenClaw Gateway，失败直接返回错误
 - 知识检索与上下文组装是真实链路
+
+### 7. discovery 模块
+
+职责：
+
+- 基于知识库构建企业能力画像
+- 生成推荐采集方向
+- 发起 `ggzy` 单站定向采集或广泛采集
+- 保存采集记录、线索池和匹配结果
+- 对项目做“方向命中 + 知识支撑”双层解释
+
+当前状态：
+
+- 新增 `/api/discovery/profile`，返回当前企业能力画像和推荐方向
+- `POST /api/discovery/runs` 已支持 `mode / profile_key / keywords / regions / qualification_terms / industry_terms`
+- discovery 列表排序规则已调整为：
+  1. `targeting_match_score desc`
+  2. `recommendation_score desc`
+  3. `published_at desc`
+- 定向采集参数会写入：
+  - `project_discovery_runs.targeting_snapshot`
+  - `storage/discovery/agent_runs/<run_id>/input.json`
+- 定向模式不再静默回退到广泛采集结果
+- 当前仍只支持 `ggzy.gov.cn`，不下载附件，不进入写标书主链路
 
 ## 三、当前目录结构
 
@@ -154,6 +189,7 @@ backend/
     response.py
   modules/
     agent/
+    discovery/
     files/
     knowledge/
     tender/
@@ -165,6 +201,7 @@ frontend/
   types/
 
 storage/
+  discovery/
   knowledge/
   tender/
     agent_runs/
@@ -215,6 +252,26 @@ storage/
   -> orchestrator 消费结果
 ```
 
+### 3. 项目发现链路
+
+```text
+用户进入 /discovery
+  -> frontend 请求 /api/discovery/profile
+  -> discovery.service 聚合 processed knowledge documents
+  -> 生成企业能力画像与推荐采集方向
+
+用户点击“按推荐方向采集”
+  -> frontend POST /api/discovery/runs
+  -> discovery.service 归一化 targeting payload
+  -> agent.collect_agent
+  -> OpenClaw Gateway Client
+  -> Local OpenClaw Gateway
+  -> collect_ggzy.py
+  -> ggzy collector
+  -> 写入 project_discovery_runs / project_leads
+  -> frontend 拉取 /api/discovery/projects / {lead_id}
+```
+
 ## 五、Agent 与知识库的关系
 
 当前约束：
@@ -240,10 +297,12 @@ orchestrator 负责：
 
 ### 1. MySQL
 
-当前 MySQL 主要用于知识库：
+当前 MySQL 主要用于知识库和项目发现：
 
 - `knowledge_documents`
 - `knowledge_chunks`
+- `project_discovery_runs`
+- `project_leads`
 
 ### 2. Local Storage
 
@@ -254,6 +313,7 @@ orchestrator 负责：
 - 招标 Agent 步骤产物
 - 知识文档原始文件
 - 知识文档解析文本
+- discovery 采集输入输出与线索详情快照
 - 招标本地 JSON 记录
 
 当前招标步骤产物目录：
@@ -261,6 +321,14 @@ orchestrator 负责：
 - `storage/tender/agent_runs/<file_id>/extract/`
 - `storage/tender/agent_runs/<file_id>/judge/`
 - `storage/tender/agent_runs/<file_id>/generate/`
+
+当前 discovery 产物目录：
+
+- `storage/discovery/agent_runs/<run_id>/input.json`
+- `storage/discovery/agent_runs/<run_id>/status.json`
+- `storage/discovery/agent_runs/<run_id>/output.json`
+- `storage/discovery/leads/<lead_id>/detail.txt`
+- `storage/discovery/leads/<lead_id>/raw_snapshot.json`
 
 每个步骤固定输出：
 
@@ -277,6 +345,7 @@ orchestrator 负责：
 当前本机联调状态：
 
 - `health` 已通过 Gateway 客户端真实验证
+- `collect / extract / judge / generate` 已走本地 OpenClaw Gateway
 - `extract / judge / generate` 已完成服务层真实联调
 - Gateway 若启用 token 鉴权，则后端需显式提供 `OPENCLAW_GATEWAY_TOKEN`
 
@@ -287,7 +356,7 @@ orchestrator 负责：
 - PDF 解析
 - 招标主链路 MySQL 化
 - 异步 worker
-- 更复杂的检索和重排
+- 更复杂的 discovery 方向词生成、检索和重排
 - Gateway HTTP 接口级联调与稳定性验证
 
 ## 八、当前架构边界

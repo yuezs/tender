@@ -1,5 +1,6 @@
 import json
 import re
+from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -38,6 +39,7 @@ class DiscoveryService:
             "collect_mode": collect_mode,
             "available_routes": [
                 "/api/discovery/status",
+                "/api/discovery/profile",
                 "/api/discovery/runs",
                 "/api/discovery/projects",
                 "/api/discovery/projects/{lead_id}",
@@ -46,9 +48,13 @@ class DiscoveryService:
             "repository_ready": self.repository.is_ready(),
         }
 
-    def run_collection(self, db: Session, source: str) -> dict:
+    def get_profile(self, db: Session) -> dict:
+        return self._build_discovery_profile(db)
+
+    def run_collection(self, db: Session, source: str, targeting_payload: dict | None = None) -> dict:
         normalized_source = source.strip().lower()
         self._validate_source(normalized_source)
+        targeting = self._normalize_targeting(targeting_payload or {})
 
         run_id = uuid4().hex
         started_at = datetime.utcnow()
@@ -65,10 +71,14 @@ class DiscoveryService:
                 "total_new": 0,
                 "total_updated": 0,
                 "error_message": "",
+                "targeting_snapshot": json.dumps(targeting, ensure_ascii=False),
             },
         )
 
-        prepared = self.agent_service.prepare_collect(source=normalized_source)
+        prepared = self.agent_service.prepare_collect(
+            source=normalized_source,
+            targeting=targeting,
+        )
         execution_context = {
             "session_key": f"agent:{prepared['agent_id']}:discovery:{run_id}:collect",
             "idempotency_key": run_id,
@@ -83,6 +93,7 @@ class DiscoveryService:
                 "prompt": prepared["prompt"],
                 "session_key": execution_context["session_key"],
                 "idempotency_key": execution_context["idempotency_key"],
+                "targeting": targeting,
             },
         )
         self.artifact_service.write_status(
@@ -122,7 +133,12 @@ class DiscoveryService:
             total_updated = 0
             projects = agent_payload["result"].get("projects", [])
             for raw_project in projects:
-                change_type = self._upsert_project_lead(db, normalized_source, raw_project)
+                change_type = self._upsert_project_lead(
+                    db,
+                    normalized_source,
+                    raw_project,
+                    targeting=targeting,
+                )
                 if change_type == "created":
                     total_new += 1
                 elif change_type == "updated":
@@ -175,6 +191,7 @@ class DiscoveryService:
         region: str,
         notice_type: str,
         recommendation_level: str,
+        profile_key: str,
         recommended_only: bool,
         page: int,
         page_size: int,
@@ -185,6 +202,7 @@ class DiscoveryService:
             region=region.strip(),
             notice_type=notice_type.strip(),
             recommendation_level=recommendation_level.strip(),
+            profile_key=profile_key.strip(),
             recommended_only=recommended_only,
             page=page,
             page_size=page_size,
@@ -224,8 +242,18 @@ class DiscoveryService:
             "match_result": {
                 "recommendation_score": int(match_result.get("recommendation_score", 0)),
                 "recommendation_level": str(match_result.get("recommendation_level", "low")),
+                "knowledge_support_score": int(match_result.get("knowledge_support_score", 0)),
+                "targeting_match_score": int(match_result.get("targeting_match_score", 0)),
+                "profile_key": str(match_result.get("profile_key", "")),
+                "profile_title": str(match_result.get("profile_title", "")),
                 "recommendation_reasons": match_result.get("recommendation_reasons", []),
+                "targeting_reasons": match_result.get("targeting_reasons", []),
                 "risks": match_result.get("risks", []),
+                "knowledge_gaps": match_result.get("knowledge_gaps", []),
+                "matched_keywords": match_result.get("matched_keywords", []),
+                "matched_regions": match_result.get("matched_regions", []),
+                "matched_qualification_terms": match_result.get("matched_qualification_terms", []),
+                "matched_industry_terms": match_result.get("matched_industry_terms", []),
                 "matched_knowledge": match_result.get("matched_knowledge", []),
             },
             "detail_text": self._read_text(lead.detail_text_path),
@@ -237,7 +265,14 @@ class DiscoveryService:
         if source == "ggzy" and not settings.discovery_source_enabled_ggzy:
             raise BusinessException("ggzy discovery source is disabled")
 
-    def _upsert_project_lead(self, db: Session, source: str, raw_project: dict) -> str:
+    def _upsert_project_lead(
+        self,
+        db: Session,
+        source: str,
+        raw_project: dict,
+        *,
+        targeting: dict,
+    ) -> str:
         normalized = self._normalize_project(raw_project, source)
         existing = self.repository.find_existing_lead(
             db,
@@ -250,7 +285,7 @@ class DiscoveryService:
 
         lead_id = existing.lead_id if existing else uuid4().hex
         extract_result = self._extract_fields(normalized)
-        match_result = self._build_match_result(db, extract_result)
+        match_result = self._build_match_result(db, extract_result, normalized, targeting)
         paths = self._persist_lead_files(lead_id, normalized)
 
         payload = {
@@ -270,6 +305,9 @@ class DiscoveryService:
             "raw_snapshot_path": paths["raw_snapshot_path"],
             "extract_result_json": json.dumps(extract_result, ensure_ascii=False),
             "match_result_json": json.dumps(match_result, ensure_ascii=False),
+            "targeting_match_score": int(match_result["targeting_match_score"]),
+            "profile_key": str(match_result["profile_key"]),
+            "profile_title": str(match_result["profile_title"]),
             "recommendation_score": int(match_result["recommendation_score"]),
             "recommendation_level": str(match_result["recommendation_level"]),
             "status": "active",
@@ -382,7 +420,13 @@ class DiscoveryService:
             "keywords": keywords,
         }
 
-    def _build_match_result(self, db: Session, extract_result: dict) -> dict:
+    def _build_match_result(
+        self,
+        db: Session,
+        extract_result: dict,
+        normalized: dict,
+        targeting: dict,
+    ) -> dict:
         qualification_query = (
             extract_result["qualification_requirements"][0]
             if extract_result["qualification_requirements"]
@@ -425,25 +469,31 @@ class DiscoveryService:
             },
         ).get("chunks", [])
 
-        score = 0
+        knowledge_support_score = 0
+        completeness_score = 0
         reasons: list[str] = []
         risks: list[str] = []
+        knowledge_gaps: list[str] = []
 
         if qualifications:
-            score += 35
+            knowledge_support_score += 35
             reasons.append("命中企业资质材料，可支撑资格匹配。")
         else:
+            knowledge_gaps.append("缺少可复用的资质材料")
             risks.append("未命中相关资质材料，资格匹配支撑不足。")
 
         if project_cases:
-            score += 30
+            knowledge_support_score += 30
             reasons.append("命中同类项目案例，可支撑履约经验说明。")
         else:
+            knowledge_gaps.append("缺少可复用的同类项目案例")
             risks.append("未命中同类项目案例，案例支撑不足。")
 
         if company_profile:
-            score += 10
+            knowledge_support_score += 10
             reasons.append("可复用企业基础资料补充推荐说明。")
+        else:
+            knowledge_gaps.append("缺少公司概况或能力介绍材料")
 
         complete_fields = [
             extract_result.get("project_name"),
@@ -455,21 +505,26 @@ class DiscoveryService:
         ]
         completeness_hits = sum(1 for item in complete_fields if str(item).strip())
         if completeness_hits:
-            score += min(completeness_hits * 5, 25)
+            completeness_score += min(completeness_hits * 5, 25)
             reasons.append(f"关键字段完整度较好，已识别 {completeness_hits} 项核心信息。")
 
         if not extract_result.get("qualification_requirements"):
-            score -= 15
+            completeness_score -= 15
             risks.append("资格要求提取不足，需要人工复核。")
         if not extract_result.get("budget_text"):
-            score -= 10
+            completeness_score -= 10
             risks.append("预算信息缺失，需要补充商务评估。")
         if self._is_deadline_urgent(extract_result.get("deadline_text", "")):
-            score -= 10
+            completeness_score -= 10
             risks.append("截止时间较近，推进窗口偏紧。")
 
-        score = max(0, min(score, 100))
-        recommendation_level = self._map_recommendation_level(score)
+        targeting_result = self._evaluate_targeting_match(
+            extract_result=extract_result,
+            normalized=normalized,
+            targeting=targeting,
+        )
+        recommendation_score = max(0, min(knowledge_support_score + completeness_score, 100))
+        recommendation_level = self._map_recommendation_level(recommendation_score)
 
         matched_knowledge = []
         for category, chunks in (
@@ -487,12 +542,512 @@ class DiscoveryService:
                 )
 
         return {
-            "recommendation_score": score,
+            "recommendation_score": recommendation_score,
             "recommendation_level": recommendation_level,
+            "knowledge_support_score": knowledge_support_score,
+            "targeting_match_score": targeting_result["targeting_match_score"],
+            "profile_key": targeting_result["profile_key"],
+            "profile_title": targeting_result["profile_title"],
             "recommendation_reasons": reasons,
+            "targeting_reasons": targeting_result["targeting_reasons"],
             "risks": risks,
+            "knowledge_gaps": knowledge_gaps,
+            "matched_keywords": targeting_result["matched_keywords"],
+            "matched_regions": targeting_result["matched_regions"],
+            "matched_qualification_terms": targeting_result["matched_qualification_terms"],
+            "matched_industry_terms": targeting_result["matched_industry_terms"],
             "matched_knowledge": matched_knowledge,
         }
+
+    def _build_discovery_profile(self, db: Session) -> dict:
+        processed_documents = self.knowledge_service.list_documents(
+            db,
+            category=None,
+            status="processed",
+        ).get("items", [])
+        documents_by_category = {
+            category: [
+                item for item in processed_documents if item.get("category") == category
+            ]
+            for category in ("company_profile", "qualifications", "project_cases", "templates")
+        }
+        document_counts = {
+            category: len(items) for category, items in documents_by_category.items()
+        }
+
+        directions: list[dict] = []
+        if documents_by_category["qualifications"]:
+            qualification_chunks = self.knowledge_service.retrieve(
+                db,
+                {
+                    "category": "qualifications",
+                    "query": "",
+                    "tags": [],
+                    "industry": [],
+                    "limit": 6,
+                },
+            ).get("chunks", [])
+            directions.append(
+                self._build_profile_direction(
+                    profile_key="qualification-track",
+                    title="资质能力导向项目",
+                    description="优先追踪与现有资质和资格条件更匹配的项目。",
+                    primary_documents=documents_by_category["qualifications"],
+                    supporting_documents=documents_by_category["project_cases"],
+                    chunks=qualification_chunks,
+                    keywords=self._extract_terms_from_documents(
+                        documents_by_category["qualifications"],
+                        qualification_chunks,
+                        limit=5,
+                    ),
+                    regions=self._extract_regions_from_documents(
+                        documents_by_category["qualifications"] + documents_by_category["project_cases"],
+                        qualification_chunks,
+                    ),
+                    qualification_terms=self._extract_terms_from_documents(
+                        documents_by_category["qualifications"],
+                        qualification_chunks,
+                        limit=4,
+                    ),
+                    industry_terms=self._extract_industry_terms(
+                        documents_by_category["qualifications"] + documents_by_category["project_cases"],
+                    ),
+                    reasons=[
+                        f"已处理 {len(documents_by_category['qualifications'])} 份资质资料，可反推适合追踪的资格条件。",
+                        "当前方向更适合优先寻找资格门槛明确、资质可复用的项目。",
+                    ],
+                    gap_message=(
+                        "缺少项目案例支撑，当前更适合做资格匹配初筛。"
+                        if not documents_by_category["project_cases"]
+                        else ""
+                    ),
+                )
+            )
+
+        if documents_by_category["project_cases"]:
+            case_chunks = self.knowledge_service.retrieve(
+                db,
+                {
+                    "category": "project_cases",
+                    "query": "",
+                    "tags": [],
+                    "industry": [],
+                    "limit": 6,
+                },
+            ).get("chunks", [])
+            directions.append(
+                self._build_profile_direction(
+                    profile_key="project-case-track",
+                    title="案例场景导向项目",
+                    description="根据已有案例和场景经验，优先追踪更接近的项目类型。",
+                    primary_documents=documents_by_category["project_cases"],
+                    supporting_documents=documents_by_category["qualifications"],
+                    chunks=case_chunks,
+                    keywords=self._extract_terms_from_documents(
+                        documents_by_category["project_cases"],
+                        case_chunks,
+                        limit=5,
+                    ),
+                    regions=self._extract_regions_from_documents(
+                        documents_by_category["project_cases"],
+                        case_chunks,
+                    ),
+                    qualification_terms=self._extract_terms_from_documents(
+                        documents_by_category["qualifications"],
+                        [],
+                        limit=3,
+                    ),
+                    industry_terms=self._extract_industry_terms(
+                        documents_by_category["project_cases"]
+                    ),
+                    reasons=[
+                        f"已处理 {len(documents_by_category['project_cases'])} 份项目案例，可反推适合跟进的行业与场景。",
+                        "当前方向更适合优先追踪与既有实施经验接近的项目。",
+                    ],
+                    gap_message=(
+                        "缺少资质材料支撑，当前更适合看场景匹配，不适合单独做资格判断。"
+                        if not documents_by_category["qualifications"]
+                        else ""
+                    ),
+                )
+            )
+
+        if documents_by_category["company_profile"]:
+            company_chunks = self.knowledge_service.retrieve(
+                db,
+                {
+                    "category": "company_profile",
+                    "query": "",
+                    "tags": [],
+                    "industry": [],
+                    "limit": 6,
+                },
+            ).get("chunks", [])
+            directions.append(
+                self._build_profile_direction(
+                    profile_key="company-profile-track",
+                    title="企业能力导向项目",
+                    description="根据公司概况、行业定位和通用能力，先给出宽口径的发现方向。",
+                    primary_documents=documents_by_category["company_profile"],
+                    supporting_documents=(
+                        documents_by_category["qualifications"] + documents_by_category["project_cases"]
+                    ),
+                    chunks=company_chunks,
+                    keywords=self._extract_terms_from_documents(
+                        documents_by_category["company_profile"],
+                        company_chunks,
+                        limit=5,
+                    ),
+                    regions=self._extract_regions_from_documents(
+                        documents_by_category["company_profile"],
+                        company_chunks,
+                    ),
+                    qualification_terms=self._extract_terms_from_documents(
+                        documents_by_category["qualifications"],
+                        [],
+                        limit=3,
+                    ),
+                    industry_terms=self._extract_industry_terms(
+                        documents_by_category["company_profile"]
+                    ),
+                    reasons=[
+                        f"已处理 {len(documents_by_category['company_profile'])} 份公司概况资料，可先形成宽口径发现方向。",
+                        "当前方向适合作为无头绪时的默认入口，再结合资质和案例逐步收窄。",
+                    ],
+                    gap_message=(
+                        "如果同时补充资质和案例资料，定向结果会更聚焦。"
+                        if not documents_by_category["qualifications"]
+                        or not documents_by_category["project_cases"]
+                        else ""
+                    ),
+                )
+            )
+
+        if not directions:
+            return {
+                "has_profile": False,
+                "message": "知识库资料不足，请先上传并处理资质、案例或公司概况，再获得推荐采集方向。",
+                "document_counts": document_counts,
+                "directions": [],
+            }
+
+        return {
+            "has_profile": True,
+            "message": f"已根据 {len(processed_documents)} 份已处理资料生成 {len(directions)} 个推荐采集方向。",
+            "document_counts": document_counts,
+            "directions": directions,
+        }
+
+    def _build_profile_direction(
+        self,
+        *,
+        profile_key: str,
+        title: str,
+        description: str,
+        primary_documents: list[dict],
+        supporting_documents: list[dict],
+        chunks: list[dict],
+        keywords: list[str],
+        regions: list[str],
+        qualification_terms: list[str],
+        industry_terms: list[str],
+        reasons: list[str],
+        gap_message: str,
+    ) -> dict:
+        supporting_refs = []
+        for chunk in chunks[:3]:
+            supporting_refs.append(
+                {
+                    "category": chunk.get("category", ""),
+                    "document_title": chunk.get("document_title", ""),
+                    "section_title": chunk.get("section_title", ""),
+                }
+            )
+        if not supporting_refs:
+            for document in [*primary_documents[:2], *supporting_documents[:1]]:
+                supporting_refs.append(
+                    {
+                        "category": document.get("category", ""),
+                        "document_title": document.get("title", ""),
+                        "section_title": "",
+                    }
+                )
+
+        confidence = "medium"
+        if len(primary_documents) >= 2 and supporting_documents:
+            confidence = "high"
+        elif len(primary_documents) == 1 and not supporting_documents:
+            confidence = "low"
+
+        if not keywords:
+            keywords = self._extract_industry_terms(primary_documents)[:3]
+
+        return {
+            "profile_key": profile_key,
+            "title": title,
+            "description": description,
+            "confidence": confidence,
+            "keywords": keywords[:5],
+            "regions": regions[:3],
+            "qualification_terms": qualification_terms[:4],
+            "industry_terms": industry_terms[:4],
+            "reasons": reasons,
+            "supporting_documents": supporting_refs[:3],
+            "gap_message": gap_message,
+        }
+
+    def _normalize_targeting(self, payload: dict) -> dict:
+        mode = str(payload.get("mode", "broad")).strip().lower()
+        if mode not in {"targeted", "broad"}:
+            mode = "broad"
+
+        normalized = {
+            "mode": mode,
+            "profile_key": str(payload.get("profile_key", "")).strip(),
+            "profile_title": str(payload.get("profile_title", "")).strip(),
+            "keywords": self._normalize_text_list(payload.get("keywords"), limit=6),
+            "regions": self._normalize_text_list(payload.get("regions"), limit=4),
+            "qualification_terms": self._normalize_text_list(
+                payload.get("qualification_terms"),
+                limit=5,
+            ),
+            "industry_terms": self._normalize_text_list(payload.get("industry_terms"), limit=5),
+        }
+        has_terms = any(
+            normalized[key]
+            for key in ("keywords", "regions", "qualification_terms", "industry_terms")
+        )
+        if normalized["mode"] != "targeted" or not has_terms:
+            normalized["mode"] = "broad"
+            normalized["profile_key"] = ""
+            normalized["profile_title"] = ""
+        return normalized
+
+    def _evaluate_targeting_match(
+        self,
+        *,
+        extract_result: dict,
+        normalized: dict,
+        targeting: dict,
+    ) -> dict:
+        if targeting.get("mode") != "targeted":
+            return {
+                "targeting_match_score": 0,
+                "profile_key": "",
+                "profile_title": "",
+                "targeting_reasons": [],
+                "matched_keywords": [],
+                "matched_regions": [],
+                "matched_qualification_terms": [],
+                "matched_industry_terms": [],
+            }
+
+        haystacks = [
+            extract_result.get("project_name", ""),
+            normalized.get("title", ""),
+            extract_result.get("project_code", ""),
+            extract_result.get("region", ""),
+            normalized.get("detail_text", ""),
+            " ".join(extract_result.get("qualification_requirements", [])),
+            " ".join(extract_result.get("keywords", [])),
+        ]
+        matched_keywords = self._match_terms(targeting.get("keywords", []), haystacks)
+        matched_regions = self._match_terms(
+            targeting.get("regions", []),
+            [extract_result.get("region", ""), normalized.get("title", ""), normalized.get("detail_text", "")],
+        )
+        matched_qualification_terms = self._match_terms(
+            targeting.get("qualification_terms", []),
+            [
+                " ".join(extract_result.get("qualification_requirements", [])),
+                normalized.get("detail_text", ""),
+            ],
+        )
+        matched_industry_terms = self._match_terms(targeting.get("industry_terms", []), haystacks)
+
+        if targeting.get("regions") and not matched_regions:
+            return {
+                "targeting_match_score": 0,
+                "profile_key": str(targeting.get("profile_key", "")),
+                "profile_title": str(targeting.get("profile_title", "")),
+                "targeting_reasons": ["未命中当前定向采集要求的地区条件。"],
+                "matched_keywords": matched_keywords,
+                "matched_regions": matched_regions,
+                "matched_qualification_terms": matched_qualification_terms,
+                "matched_industry_terms": matched_industry_terms,
+            }
+
+        score = 0
+        reasons: list[str] = []
+        if matched_keywords:
+            score += min(40, 15 + len(matched_keywords) * 8)
+            reasons.append(f"命中关键词：{'、'.join(matched_keywords[:3])}")
+        if matched_regions:
+            score += min(20, 8 + len(matched_regions) * 6)
+            reasons.append(f"命中地区：{'、'.join(matched_regions[:3])}")
+        if matched_qualification_terms:
+            score += min(25, 10 + len(matched_qualification_terms) * 5)
+            reasons.append(f"命中资格条件：{'、'.join(matched_qualification_terms[:3])}")
+        if matched_industry_terms:
+            score += min(15, 6 + len(matched_industry_terms) * 4)
+            reasons.append(f"命中行业方向：{'、'.join(matched_industry_terms[:3])}")
+        if not reasons:
+            reasons.append("未明显命中当前定向采集条件。")
+
+        return {
+            "targeting_match_score": max(0, min(score, 100)),
+            "profile_key": str(targeting.get("profile_key", "")),
+            "profile_title": str(targeting.get("profile_title", "")),
+            "targeting_reasons": reasons,
+            "matched_keywords": matched_keywords,
+            "matched_regions": matched_regions,
+            "matched_qualification_terms": matched_qualification_terms,
+            "matched_industry_terms": matched_industry_terms,
+        }
+
+    def _extract_terms_from_documents(
+        self,
+        documents: list[dict],
+        chunks: list[dict],
+        *,
+        limit: int,
+    ) -> list[str]:
+        weights: Counter[str] = Counter()
+        for document in documents:
+            for value in document.get("tags", []):
+                weights[value] += 4
+            for value in document.get("industry", []):
+                weights[value] += 4
+            for token in self._tokenize_profile_text(document.get("title", "")):
+                weights[token] += 2
+        for chunk in chunks:
+            for token in self._tokenize_profile_text(chunk.get("section_title", "")):
+                weights[token] += 2
+            for token in self._tokenize_profile_text(chunk.get("document_title", "")):
+                weights[token] += 1
+        return [item for item, _ in weights.most_common(limit)]
+
+    def _extract_industry_terms(self, documents: list[dict]) -> list[str]:
+        weights: Counter[str] = Counter()
+        for document in documents:
+            for value in document.get("industry", []):
+                weights[value] += 4
+            for value in document.get("tags", []):
+                weights[value] += 2
+        return [item for item, _ in weights.most_common(4)]
+
+    def _extract_regions_from_documents(
+        self,
+        documents: list[dict],
+        chunks: list[dict],
+    ) -> list[str]:
+        values: list[str] = []
+        for document in documents:
+            values.extend(document.get("tags", []))
+            values.extend(document.get("industry", []))
+            values.append(str(document.get("title", "")))
+        for chunk in chunks:
+            values.append(str(chunk.get("section_title", "")))
+            values.append(str(chunk.get("document_title", "")))
+        return self._extract_regions_from_values(values)
+
+    def _extract_regions_from_values(self, values: list[str]) -> list[str]:
+        region_names = [
+            "北京",
+            "天津",
+            "河北",
+            "山西",
+            "内蒙古",
+            "辽宁",
+            "吉林",
+            "黑龙江",
+            "上海",
+            "江苏",
+            "浙江",
+            "安徽",
+            "福建",
+            "江西",
+            "山东",
+            "河南",
+            "湖北",
+            "湖南",
+            "广东",
+            "广西",
+            "海南",
+            "重庆",
+            "四川",
+            "贵州",
+            "云南",
+            "西藏",
+            "陕西",
+            "甘肃",
+            "青海",
+            "宁夏",
+            "新疆",
+        ]
+        matched: list[str] = []
+        for raw_value in values:
+            text = str(raw_value).strip()
+            if not text:
+                continue
+            for region_name in region_names:
+                if region_name in text and region_name not in matched:
+                    matched.append(region_name)
+            if len(matched) >= 3:
+                break
+        return matched
+
+    def _tokenize_profile_text(self, value: str) -> list[str]:
+        stopwords = {
+            "公司",
+            "项目",
+            "模板",
+            "案例",
+            "资质",
+            "资格",
+            "介绍",
+            "情况",
+            "能力",
+            "方案",
+            "标书",
+            "服务",
+            "建设",
+            "工程",
+            "采购",
+            "技术",
+            "管理",
+            "相关",
+            "要求",
+        }
+        tokens: list[str] = []
+        for matched in re.findall(r"[\u4e00-\u9fff]{2,12}|[A-Za-z][A-Za-z0-9\-]{1,20}", str(value or "")):
+            token = matched.strip()
+            if not token or token in stopwords:
+                continue
+            if token not in tokens:
+                tokens.append(token)
+            if len(tokens) >= 8:
+                break
+        return tokens
+
+    def _normalize_text_list(self, value: object, *, limit: int) -> list[str]:
+        normalized: list[str] = []
+        items = value if isinstance(value, list) else []
+        for item in items:
+            text = str(item).strip()
+            if text and text not in normalized:
+                normalized.append(text[:80])
+            if len(normalized) >= limit:
+                break
+        return normalized
+
+    def _match_terms(self, terms: list[str], haystacks: list[str]) -> list[str]:
+        matched: list[str] = []
+        combined = " ".join(str(item or "") for item in haystacks)
+        for term in terms:
+            if term and term not in matched and term in combined:
+                matched.append(term)
+        return matched
 
     def _persist_lead_files(self, lead_id: str, normalized: dict) -> dict:
         lead_dir = self.storage_root / lead_id
@@ -513,6 +1068,7 @@ class DiscoveryService:
         }
 
     def _serialize_run(self, item) -> dict:
+        targeting = self._load_json(item.targeting_snapshot)
         return {
             "run_id": item.run_id,
             "source": item.source,
@@ -524,6 +1080,7 @@ class DiscoveryService:
             "total_new": item.total_new,
             "total_updated": item.total_updated,
             "error_message": item.error_message,
+            "targeting": self._normalize_targeting(targeting),
         }
 
     def _serialize_lead_list_item(self, item) -> dict:
@@ -541,6 +1098,9 @@ class DiscoveryService:
             "deadline_text": item.deadline_text,
             "recommendation_score": item.recommendation_score,
             "recommendation_level": item.recommendation_level,
+            "targeting_match_score": int(match_result.get("targeting_match_score", item.targeting_match_score)),
+            "profile_key": str(match_result.get("profile_key", item.profile_key)),
+            "profile_title": str(match_result.get("profile_title", item.profile_title)),
             "recommendation_reasons": match_result.get("recommendation_reasons", []),
         }
 

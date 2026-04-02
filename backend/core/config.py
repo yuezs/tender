@@ -46,7 +46,7 @@ class Settings:
 
     agent_use_real_llm: bool = _get_bool("AGENT_USE_REAL_LLM", True)
     openclaw_command: str = os.getenv("OPENCLAW_COMMAND", DEFAULT_OPENCLAW_COMMAND)
-    openclaw_timeout_seconds: int = int(os.getenv("OPENCLAW_TIMEOUT_SECONDS", "120"))
+    openclaw_timeout_seconds: int = int(os.getenv("OPENCLAW_TIMEOUT_SECONDS", "240"))
     openclaw_thinking: str = os.getenv("OPENCLAW_THINKING", "minimal")
     openclaw_agent_collect: str = os.getenv("OPENCLAW_AGENT_COLLECT", "tender-collect")
     openclaw_agent_extract: str = os.getenv("OPENCLAW_AGENT_EXTRACT", "tender-extract")

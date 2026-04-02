@@ -6,10 +6,12 @@ import {
   UploadTenderResponse
 } from "@/types/tender";
 import {
+  DiscoveryProfile,
   DiscoveryProjectDetail,
   DiscoveryProjectListResponse,
   DiscoveryRunListResponse,
-  DiscoveryRunResponse
+  DiscoveryRunResponse,
+  DiscoveryRunTargeting
 } from "@/types/discovery";
 import {
   KnowledgeCategory,
@@ -161,13 +163,36 @@ export async function retrieveKnowledge(payload: {
   return parseResponse<RetrieveKnowledgeResponse>(response);
 }
 
-export async function runDiscoveryCollection(source = "ggzy"): Promise<DiscoveryRunResponse> {
+export async function getDiscoveryProfile(): Promise<DiscoveryProfile> {
+  const response = await fetch(`${API_BASE_URL}/api/discovery/profile`);
+  return parseResponse<DiscoveryProfile>(response);
+}
+
+export async function runDiscoveryCollection(payload?: {
+  source?: string;
+  mode?: DiscoveryRunTargeting["mode"];
+  profile_key?: string;
+  profile_title?: string;
+  keywords?: string[];
+  regions?: string[];
+  qualification_terms?: string[];
+  industry_terms?: string[];
+}): Promise<DiscoveryRunResponse> {
   const response = await fetch(`${API_BASE_URL}/api/discovery/runs`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ source })
+    body: JSON.stringify({
+      source: payload?.source ?? "ggzy",
+      mode: payload?.mode ?? "broad",
+      profile_key: payload?.profile_key ?? "",
+      profile_title: payload?.profile_title ?? "",
+      keywords: payload?.keywords ?? [],
+      regions: payload?.regions ?? [],
+      qualification_terms: payload?.qualification_terms ?? [],
+      industry_terms: payload?.industry_terms ?? []
+    })
   });
 
   return parseResponse<DiscoveryRunResponse>(response);
@@ -183,6 +208,7 @@ export async function listDiscoveryProjects(params: {
   region?: string;
   notice_type?: string;
   recommendation_level?: string;
+  profile_key?: string;
   recommended_only?: boolean;
   page?: number;
   page_size?: number;

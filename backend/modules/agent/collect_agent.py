@@ -9,17 +9,18 @@ class CollectAgent:
     def __init__(self) -> None:
         self.client = OpenClawClient()
 
-    def build_prompt(self, source: str) -> str:
-        return build_collect_prompt(source)
+    def build_prompt(self, source: str, targeting: dict | None = None) -> str:
+        return build_collect_prompt(source, targeting)
 
     def run(
         self,
         *,
         source: str,
+        targeting: dict | None = None,
         execution_context: dict | None = None,
         prompt: str | None = None,
     ) -> dict:
-        prompt = prompt or self.build_prompt(source)
+        prompt = prompt or self.build_prompt(source, targeting or {})
         execution_context = execution_context or {}
 
         if not settings.agent_use_real_llm:
