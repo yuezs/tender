@@ -27,11 +27,13 @@
 
 - 使用 MySQL 存储 `knowledge_documents` 和 `knowledge_chunks`
 - 已实现文档上传、列表、处理、简单检索
+- 前端资料中心（`/knowledge`）已支持：上传、列表、处理、检索调试
 - 当前只支持 4 类资料：
   - `company_profile`
   - `qualifications`
   - `project_cases`
   - `templates`
+- 当前知识文档仅支持 `txt / docx`（`pdf` 未纳入知识库范围）
 - 检索方式为：
   - 分类过滤
   - tags 过滤
@@ -140,13 +142,13 @@ npm run dev
 - `extract / judge / generate` 仍是 mock / 规则版
 - 未实现 PDF 真实解析
 - 未实现复杂权限、审批流、向量检索、RAG、rerank
-- 知识库前端仍是工作台空壳，未完成完整管理界面
+- 知识库前端已实现基础管理页（上传 / 列表 / 处理 / 检索调试），未实现文档详情、删除编辑、片段预览等扩展能力
 - 招标链路主记录仍未切到 MySQL
 
 ## 下一步建议
 
 1. 接入真实 OpenClaw / LLM
-2. 完成知识库前端管理页
+2. 增加知识库文档详情与片段预览（可选）
 3. 补齐 PDF 解析
 4. 将招标主链路记录迁移到 MySQL
 5. 增加基础自动化测试

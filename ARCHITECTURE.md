@@ -37,6 +37,7 @@ Backend API (FastAPI)
 - 展示解析结果
 - 展示投标建议
 - 展示标书初稿
+- 资料中心：上传企业资料、处理并调试检索
 - 展示知识引用结果
 
 当前页面：
@@ -102,6 +103,10 @@ Backend API (FastAPI)
 - 规则切块
 - 写入 MySQL
 - 提供简单检索能力
+
+前端资料中心：
+
+- `/knowledge` 页面提供上传、列表、处理、检索调试，用于验证知识入库与命中情况
 
 当前状态：
 
@@ -199,6 +204,7 @@ storage/
 
 ```text
 用户上传知识文档
+  -> frontend /knowledge 发起 upload/process/retrieve
   -> knowledge.upload
   -> 本地保存原始文件
   -> knowledge.process
