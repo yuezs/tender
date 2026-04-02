@@ -123,7 +123,7 @@ Backend API (FastAPI)
 - 编排知识上下文
 - 驱动 `extract_agent / judge_agent / generate_agent`
 - 通过本地 OpenClaw Gateway 发起同步 Agent RPC
-- 对模型输出做结构化兜底
+- 对模型输出做结构化校验
 
 当前状态：
 
@@ -136,7 +136,7 @@ Backend API (FastAPI)
 - 内部真实调用路径已切换为本地 OpenClaw Gateway
 - Gateway 握手已补齐本机 `device identity` 与设备 token
 - Agent 会话 key 采用 `agent:<agent_id>:tender:<file_id>:<step>` 形式
-- `extract / judge / generate` 仍保留规则或模板兜底
+- `extract / judge / generate` 强制走本地 OpenClaw Gateway，失败直接返回错误
 - 知识检索与上下文组装是真实链路
 
 ## 三、当前目录结构

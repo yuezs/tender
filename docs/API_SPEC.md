@@ -56,7 +56,7 @@
 
 用途：
 - 查看 discovery 模块状态。
-- 查看当前采集模式是否为 `openclaw-agent`、`ggzy-http` 或 `fallback-mock`。
+- 查看当前采集模式是否为 `openclaw-agent` 或 `disabled`。
 
 返回示例：
 
@@ -295,8 +295,8 @@
 
 说明：
 - `extract / judge / generate` 对外响应结构保持稳定。
-- 当启用真实 Agent 时，内部优先经由 OpenClaw Gateway 调用。
-- 失败时仍保留规则或模板兜底。
+- 当前招标主链路强制经由本地 OpenClaw Gateway 调用。
+- OpenClaw 不可用、返回空结果或返回非法 JSON 时，接口直接返回可读错误。
 
 ## OpenClaw 与产物
 

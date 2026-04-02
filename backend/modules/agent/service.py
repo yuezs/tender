@@ -11,16 +11,14 @@ class AgentService:
         self.extract_agent = ExtractAgent()
 
     def ping(self) -> dict:
-        if settings.discovery_collect_use_openclaw_agent:
+        if settings.agent_use_real_llm and settings.discovery_collect_use_openclaw_agent:
             collect_mode = "openclaw-agent"
-        elif settings.discovery_collect_use_real_ggzy:
-            collect_mode = "ggzy-http"
         else:
-            collect_mode = "openclaw-llm" if settings.agent_use_real_llm else "fallback-mock"
+            collect_mode = "disabled"
         return {
             "module": "agent",
             "status": "ready",
-            "mock": collect_mode == "fallback-mock",
+            "mock": False,
             "collect_mode": collect_mode,
             "available_tasks": ["collect", "extract", "judge", "generate"],
         }
