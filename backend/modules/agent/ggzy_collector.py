@@ -159,10 +159,22 @@ class GgzyCollector:
         else:
             projects = matched_projects[: self.max_projects] or fallback_projects[: self.max_projects]
         if not projects:
-            detail = "; ".join(failures[:3]) if failures else "no supported notices found on list page"
-            if self._is_targeted_mode():
-                raise BusinessException(f"ggzy collection found no projects matching current targeting: {detail}")
-            raise BusinessException(f"ggzy collection returned no projects: {detail}")
+            return {
+                "projects": [],
+                "meta": {
+                    "list_url": self.list_url,
+                    "candidate_count": len(candidate_items),
+                    "project_count": 0,
+                    "matched_project_count": len(matched_projects),
+                    "incomplete_count": incomplete_count,
+                    "failure_count": len(failures),
+                    "budget_seconds": self.budget_seconds,
+                    "budget_exhausted": budget_exhausted,
+                    "remaining_seconds": round(self._remaining_seconds(deadline), 2),
+                    "targeting": self.targeting,
+                    "failures": failures[:5],
+                },
+            }
 
         return {
             "projects": projects,
