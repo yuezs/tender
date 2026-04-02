@@ -11,6 +11,13 @@ import {
   DiscoveryRunListResponse,
   DiscoveryRunResponse
 } from "@/types/discovery";
+import {
+  KnowledgeCategory,
+  ListKnowledgeDocumentsResponse,
+  ProcessKnowledgeDocumentResponse,
+  RetrieveKnowledgeResponse,
+  UploadKnowledgeResponse
+} from "@/types/knowledge";
 
 type ApiEnvelope<T> = {
   success: boolean;
@@ -79,6 +86,79 @@ function buildQueryString(params: Record<string, string | number | boolean | und
   });
   const query = search.toString();
   return query ? `?${query}` : "";
+}
+
+export async function uploadKnowledgeDocument(payload: {
+  file: File;
+  title: string;
+  category: KnowledgeCategory;
+  tags?: string;
+  industry?: string;
+}): Promise<UploadKnowledgeResponse> {
+  const formData = new FormData();
+  formData.append("file", payload.file);
+  formData.append("title", payload.title);
+  formData.append("category", payload.category);
+  if (payload.tags) {
+    formData.append("tags", payload.tags);
+  }
+  if (payload.industry) {
+    formData.append("industry", payload.industry);
+  }
+
+  const response = await fetch(`${API_BASE_URL}/api/knowledge/documents/upload`, {
+    method: "POST",
+    body: formData
+  });
+
+  return parseResponse<UploadKnowledgeResponse>(response);
+}
+
+export async function listKnowledgeDocuments(filters?: {
+  category?: KnowledgeCategory | "";
+  status?: string;
+}): Promise<ListKnowledgeDocumentsResponse> {
+  const params = new URLSearchParams();
+  if (filters?.category) {
+    params.set("category", filters.category);
+  }
+  if (filters?.status) {
+    params.set("status", filters.status);
+  }
+
+  const url = `${API_BASE_URL}/api/knowledge/documents${params.size ? `?${params.toString()}` : ""}`;
+  const response = await fetch(url, { cache: "no-store" });
+  return parseResponse<ListKnowledgeDocumentsResponse>(response);
+}
+
+export async function processKnowledgeDocument(documentId: string): Promise<ProcessKnowledgeDocumentResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/knowledge/documents/${documentId}/process`, {
+    method: "POST"
+  });
+  return parseResponse<ProcessKnowledgeDocumentResponse>(response);
+}
+
+export async function retrieveKnowledge(payload: {
+  category?: KnowledgeCategory | "";
+  query?: string;
+  tags?: string[];
+  industry?: string[];
+  limit?: number;
+}): Promise<RetrieveKnowledgeResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/knowledge/retrieve`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      category: payload.category || undefined,
+      query: payload.query || undefined,
+      tags: payload.tags?.length ? payload.tags : undefined,
+      industry: payload.industry?.length ? payload.industry : undefined,
+      limit: payload.limit ?? 5
+    })
+  });
+  return parseResponse<RetrieveKnowledgeResponse>(response);
 }
 
 export async function runDiscoveryCollection(source = "ggzy"): Promise<DiscoveryRunResponse> {

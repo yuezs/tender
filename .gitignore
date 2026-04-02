@@ -37,6 +37,9 @@ storage/knowledge/raw/templates/*
 storage/knowledge/parsed/*
 storage/knowledge/chunks/*
 storage/discovery/
+storage/_logs/
+storage/_tmp/
+storage/_tmp_push/
 
 !storage/tender/raw/.gitkeep
 !storage/tender/parsed/.gitkeep
