@@ -7,12 +7,14 @@
 
 ## 项目目标
 当前只实现 MVP，聚焦以下能力：
-1. 上传招标文件
-2. 解析招标文件
-3. 抽取核心字段
-4. 判断是否建议投标
-5. 生成标书初稿
-6. 接入简易企业知识库
+1. 手动发现公开项目
+2. 项目推荐与筛选
+3. 上传招标文件
+4. 解析招标文件
+5. 抽取核心字段
+6. 判断是否建议投标
+7. 生成标书初稿
+8. 接入简易企业知识库
 
 ---
 
@@ -95,13 +97,17 @@
 ---
 
 ## Agent 约束
-当前只允许以下 4 个 Agent：
-1. extract_agent
-2. judge_agent
-3. generate_agent
-4. orchestrator
+当前允许以下 5 个 Agent：
+1. collect_agent
+2. extract_agent
+3. judge_agent
+4. generate_agent
+5. orchestrator
 
-禁止擅自增加更多 Agent。
+约束：
+- `collect_agent` 仅用于“项目发现”前置层
+- `collect_agent` 不下载附件，不进入写标书主链路
+- 禁止擅自增加更多 Agent
 
 ---
 
