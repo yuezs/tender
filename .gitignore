@@ -9,17 +9,6 @@ backend/__pycache__/
 backend/**/*.pyc
 **/__pycache__/
 *.pyc
-backend/openclaw_agents/**/.openclaw/
-backend/openclaw_agents/**/BOOTSTRAP.md
-backend/openclaw_agents/**/HEARTBEAT.md
-backend/openclaw_agents/**/IDENTITY.md
-backend/openclaw_agents/**/MEMORY.md
-backend/openclaw_agents/**/SOUL.md
-backend/openclaw_agents/**/TOOLS.md
-backend/openclaw_agents/**/USER.md
-backend/openclaw_agents/**/artifacts/
-backend/openclaw_agents/**/skills/
-backend/openclaw_agents/**/memory/
 backend/openclaw_agents/**/homepage.html
 backend/openclaw_agents/**/temp_search.ps1
 backend/openclaw_agents/**/tmp_scrape.js
