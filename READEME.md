@@ -27,13 +27,32 @@
 
 - 使用 MySQL 存储 `knowledge_documents` 和 `knowledge_chunks`
 - 已实现文档上传、列表、处理、简单检索
-- 前端资料中心（`/knowledge`）已支持：上传、列表、处理、检索调试
+- 已实现文档全文查看、原文件下载、删除
+- 前端资料中心（`/knowledge`）已支持：
+  - 上传、列表、筛选、处理
+  - 最近处理结果（解析摘要 / 告警 / 重点内容 / 切块预览）
+  - 检索调试
+  - 文档操作下拉菜单（处理 / 全文查看 / 文件下载 / 删除）
+  - 检索结果三行预览 + 弹窗全文查看
 - 当前只支持 4 类资料：
   - `company_profile`
   - `qualifications`
   - `project_cases`
   - `templates`
 - 当前知识文档仅支持 `txt / docx`（`pdf` 未纳入知识库范围）
+- 当前解析能力：
+  - `txt / docx` 统一解析为结构块
+  - `docx` 支持段落、标题、列表、表格顺序读取
+  - 支持段内编号标题识别与长段再切分
+  - `company_profile` 已增加规则版重点句提取
+- 处理结果会返回：
+  - `parse_summary`
+  - `warnings`
+  - `key_points`
+  - `chunk_preview`
+- 原文件与解析文本会分别落盘到：
+  - `storage/knowledge/raw/`
+  - `storage/knowledge/parsed/`
 - 检索方式为：
   - 分类过滤
   - tags 过滤
@@ -142,13 +161,13 @@ npm run dev
 - `extract / judge / generate` 仍是 mock / 规则版
 - 未实现 PDF 真实解析
 - 未实现复杂权限、审批流、向量检索、RAG、rerank
-- 知识库前端已实现基础管理页（上传 / 列表 / 处理 / 检索调试），未实现文档详情、删除编辑、片段预览等扩展能力
+- 知识库前端已实现基础管理页（上传 / 列表 / 处理 / 检索调试 / 全文查看 / 下载 / 删除），未实现编辑、向量检索、复杂排序与权限能力
 - 招标链路主记录仍未切到 MySQL
 
 ## 下一步建议
 
 1. 接入真实 OpenClaw / LLM
-2. 增加知识库文档详情与片段预览（可选）
+2. 增加知识库结构化字段提取与更稳的排序（可选）
 3. 补齐 PDF 解析
 4. 将招标主链路记录迁移到 MySQL
 5. 增加基础自动化测试

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from core.database import get_db
@@ -49,6 +50,28 @@ def list_knowledge_documents(
 def process_knowledge_document(document_id: str, db: Session = Depends(get_db)):
     result = service.process_document(db, document_id)
     return success_response(result, message="知识文档处理成功。")
+
+
+@router.get("/documents/{document_id}/content")
+def get_knowledge_document_content(document_id: str, db: Session = Depends(get_db)):
+    result = service.get_document_content(db, document_id)
+    return success_response(result, message="知识文档全文获取成功。")
+
+
+@router.get("/documents/{document_id}/download")
+def download_knowledge_document(document_id: str, db: Session = Depends(get_db)):
+    result = service.get_document_download(db, document_id)
+    return FileResponse(
+        path=result["file_path"],
+        filename=result["file_name"],
+        media_type=result["media_type"],
+    )
+
+
+@router.delete("/documents/{document_id}")
+def delete_knowledge_document(document_id: str, db: Session = Depends(get_db)):
+    result = service.delete_document(db, document_id)
+    return success_response(result, message="知识文档删除成功。")
 
 
 @router.post("/retrieve")

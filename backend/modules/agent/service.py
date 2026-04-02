@@ -18,7 +18,7 @@ class AgentService:
         return {
             "module": "agent",
             "status": "ready",
-            "mock": False,
+            "mock": not settings.agent_use_real_llm,
             "collect_mode": collect_mode,
             "available_tasks": ["collect", "extract", "judge", "generate"],
         }
