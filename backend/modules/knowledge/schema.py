@@ -26,6 +26,8 @@ class KnowledgeDocumentItem(BaseModel):
     industry: list[str]
     status: str
     chunk_count: int
+    content_length: int
+    error_message: str
     created_at: str
     updated_at: str
 
@@ -34,10 +36,45 @@ class KnowledgeDocumentListResponse(BaseModel):
     items: list[KnowledgeDocumentItem]
 
 
+class KnowledgeParseSummary(BaseModel):
+    block_count: int
+    heading_count: int
+    paragraph_count: int
+    list_item_count: int
+    table_row_count: int
+    character_count: int
+    line_count: int
+
+
+class KnowledgeChunkPreviewItem(BaseModel):
+    section_title: str
+    content_preview: str
+    char_count: int
+
+
 class KnowledgeProcessResponse(BaseModel):
     document_id: str
     chunk_count: int
     status: str
+    content_length: int
+    parse_summary: KnowledgeParseSummary
+    warnings: list[str]
+    key_points: list[str]
+    chunk_preview: list[KnowledgeChunkPreviewItem]
+
+
+class KnowledgeDocumentContentResponse(BaseModel):
+    document_id: str
+    title: str
+    category: str
+    status: str
+    source: str
+    content: str
+
+
+class KnowledgeDeleteResponse(BaseModel):
+    document_id: str
+    title: str
 
 
 class KnowledgeRetrieveRequest(BaseModel):

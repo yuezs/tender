@@ -62,6 +62,16 @@ class KnowledgeRepository:
             db.rollback()
             raise BusinessException(f"知识文档更新失败：{exc.__class__.__name__}") from exc
 
+    def delete_document(self, db: Session, document_id: str) -> KnowledgeDocument:
+        try:
+            document = self.get_document(db, document_id)
+            db.delete(document)
+            db.commit()
+            return document
+        except SQLAlchemyError as exc:
+            db.rollback()
+            raise BusinessException(f"知识文档删除失败：{exc.__class__.__name__}") from exc
+
     def replace_chunks(self, db: Session, document: KnowledgeDocument, chunks: list[dict]) -> list[KnowledgeChunk]:
         try:
             db.execute(delete(KnowledgeChunk).where(KnowledgeChunk.document_id == document.document_id))

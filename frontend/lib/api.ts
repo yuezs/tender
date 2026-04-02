@@ -12,7 +12,9 @@ import {
   DiscoveryRunResponse
 } from "@/types/discovery";
 import {
+  DeleteKnowledgeDocumentResponse,
   KnowledgeCategory,
+  KnowledgeDocumentContentResponse,
   ListKnowledgeDocumentsResponse,
   ProcessKnowledgeDocumentResponse,
   RetrieveKnowledgeResponse,
@@ -136,6 +138,24 @@ export async function processKnowledgeDocument(documentId: string): Promise<Proc
     method: "POST"
   });
   return parseResponse<ProcessKnowledgeDocumentResponse>(response);
+}
+
+export async function getKnowledgeDocumentContent(documentId: string): Promise<KnowledgeDocumentContentResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/knowledge/documents/${documentId}/content`, {
+    cache: "no-store"
+  });
+  return parseResponse<KnowledgeDocumentContentResponse>(response);
+}
+
+export function getKnowledgeDocumentDownloadUrl(documentId: string): string {
+  return `${API_BASE_URL}/api/knowledge/documents/${documentId}/download`;
+}
+
+export async function deleteKnowledgeDocument(documentId: string): Promise<DeleteKnowledgeDocumentResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/knowledge/documents/${documentId}`, {
+    method: "DELETE"
+  });
+  return parseResponse<DeleteKnowledgeDocumentResponse>(response);
 }
 
 export async function retrieveKnowledge(payload: {
