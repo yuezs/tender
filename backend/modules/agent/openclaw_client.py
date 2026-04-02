@@ -121,8 +121,14 @@ class GatewayRpcConnection(AbstractContextManager):
 
     def _build_connect_params(self, nonce: str) -> dict[str, Any]:
         role = "operator"
-        scopes = ["operator.read", "operator.write", "operator.admin"]
-        platform_name = platform.system().lower() or "unknown"
+        scopes = [
+            "operator.read",
+            "operator.write",
+            "operator.admin",
+            "operator.approvals",
+            "operator.pairing",
+        ]
+        platform_name = self._resolve_platform_name()
         device_identity = self._load_or_create_device_identity()
         device_token = self._load_device_auth_token(
             device_id=device_identity.device_id,
@@ -130,12 +136,12 @@ class GatewayRpcConnection(AbstractContextManager):
         )
 
         auth: dict[str, str] = {}
-        if settings.openclaw_gateway_token:
+        if device_token:
+            auth["deviceToken"] = device_token
+        elif settings.openclaw_gateway_token:
             auth["token"] = settings.openclaw_gateway_token
         elif settings.openclaw_gateway_password:
             auth["password"] = settings.openclaw_gateway_password
-        elif device_token:
-            auth["deviceToken"] = device_token
         signature_token = (
             auth.get("token")
             or auth.get("deviceToken")
@@ -299,6 +305,12 @@ class GatewayRpcConnection(AbstractContextManager):
 
     def _normalize_device_metadata(self, value: str) -> str:
         return value.strip().lower() if isinstance(value, str) else ""
+
+    def _resolve_platform_name(self) -> str:
+        system_name = platform.system().lower()
+        if system_name == "windows":
+            return "win32"
+        return system_name or "unknown"
 
     def _sign_device_payload(self, private_key_pem: str, payload: str) -> str:
         private_key = serialization.load_pem_private_key(
