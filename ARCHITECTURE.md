@@ -111,17 +111,43 @@ Backend API (FastAPI)
 - 规则切块
 - 写入 MySQL
 - 提供简单检索能力
+- 提供全文查看、原文件下载、删除能力
 
 前端资料中心：
 
 - `/knowledge` 页面提供上传、列表、处理、检索调试，用于验证知识入库与命中情况
+- 当前页面还提供：
+  - 最近处理结果（解析摘要 / 告警 / 重点内容 / 切块预览）
+  - 文档操作下拉菜单（处理 / 全文查看 / 文件下载 / 删除）
+  - 检索结果三行预览与弹窗全文查看
 
 当前状态：
 
 - `knowledge_documents` 和 `knowledge_chunks` 已落 MySQL
+- 原文件落盘到 `storage/knowledge/raw/`
+- 解析文本落盘到 `storage/knowledge/parsed/`
 - 不使用 PostgreSQL
 - 不使用 JSONB
 - 不使用向量检索
+- 当前知识文档仅支持 `txt / docx`
+- `txt / docx` 会先解析为结构块，再进行规则切块
+- `docx` 解析已支持段落、标题、列表、表格顺序读取
+- 已支持段内编号标题识别与长段再切分
+- `company_profile` 已增加规则版重点句提取
+- `process` 接口当前会返回：
+  - `parse_summary`
+  - `warnings`
+  - `key_points`
+  - `chunk_preview`
+- 当前知识库接口包括：
+  - `/api/knowledge/status`
+  - `/api/knowledge/documents/upload`
+  - `/api/knowledge/documents`
+  - `/api/knowledge/documents/{document_id}/process`
+  - `/api/knowledge/documents/{document_id}/content`
+  - `/api/knowledge/documents/{document_id}/download`
+  - `DELETE /api/knowledge/documents/{document_id}`
+  - `/api/knowledge/retrieve`
 
 ### 6. agent 模块
 
@@ -241,7 +267,7 @@ storage/
 
 ```text
 用户上传知识文档
-  -> frontend /knowledge 发起 upload/process/retrieve
+  -> frontend /knowledge 发起 upload/process/retrieve/content/download/delete
   -> knowledge.upload
   -> 本地保存原始文件
   -> knowledge.process
@@ -249,6 +275,7 @@ storage/
   -> 规则切块
   -> 写入 knowledge_documents / knowledge_chunks
   -> knowledge.retrieve
+  -> knowledge.content / knowledge.download / knowledge.delete
   -> orchestrator 消费结果
 ```
 
