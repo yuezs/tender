@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import AppShell from "@/components/app-shell";
 import EmptyState from "@/components/ui/empty-state";
@@ -9,11 +9,14 @@ import MetricCard from "@/components/ui/metric-card";
 import PageHeader from "@/components/ui/page-header";
 import PanelCard from "@/components/ui/panel-card";
 import {
+  getDiscoveryProfile,
   listDiscoveryProjects,
   listDiscoveryRuns,
   runDiscoveryCollection
 } from "@/lib/api";
 import {
+  DiscoveryProfile,
+  DiscoveryProfileDirection,
   DiscoveryProjectListResponse,
   DiscoveryRunListResponse,
   DiscoveryRunResponse
@@ -24,6 +27,7 @@ type Filters = {
   region: string;
   notice_type: string;
   recommendation_level: string;
+  profile_key: string;
   recommended_only: boolean;
   page: number;
   page_size: number;
@@ -34,6 +38,7 @@ const initialFilters: Filters = {
   region: "",
   notice_type: "",
   recommendation_level: "",
+  profile_key: "",
   recommended_only: false,
   page: 1,
   page_size: 10
@@ -49,15 +54,36 @@ function formatLevel(level: string) {
   return "低推荐";
 }
 
+function formatConfidence(confidence: string) {
+  if (confidence === "high") {
+    return "高把握";
+  }
+  if (confidence === "medium") {
+    return "中把握";
+  }
+  return "低把握";
+}
+
 export default function DiscoveryPage() {
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [projects, setProjects] = useState<DiscoveryProjectListResponse | null>(null);
   const [runs, setRuns] = useState<DiscoveryRunListResponse | null>(null);
+  const [profile, setProfile] = useState<DiscoveryProfile | null>(null);
+  const [selectedProfileKey, setSelectedProfileKey] = useState("");
   const [pageMessage, setPageMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isCollecting, setIsCollecting] = useState(false);
 
   const latestRun: DiscoveryRunResponse | null = runs?.items[0] ?? null;
+  const selectedDirection = useMemo<DiscoveryProfileDirection | null>(() => {
+    if (!profile?.directions.length) {
+      return null;
+    }
+    return (
+      profile.directions.find((item) => item.profile_key === selectedProfileKey) ??
+      profile.directions[0]
+    );
+  }, [profile, selectedProfileKey]);
 
   async function loadProjects(nextFilters: Filters) {
     const response = await listDiscoveryProjects(nextFilters);
@@ -69,12 +95,20 @@ export default function DiscoveryPage() {
     setRuns(response);
   }
 
+  async function loadProfile() {
+    const response = await getDiscoveryProfile();
+    setProfile(response);
+    if (response.directions.length) {
+      setSelectedProfileKey((current) => current || response.directions[0].profile_key);
+    }
+  }
+
   async function refreshAll(nextFilters: Filters) {
     setIsLoading(true);
     try {
-      await Promise.all([loadProjects(nextFilters), loadRuns()]);
+      await Promise.all([loadProjects(nextFilters), loadRuns(), loadProfile()]);
       if (!pageMessage) {
-        setPageMessage("已加载项目线索池，可手动筛选和查看推荐。");
+        setPageMessage("已加载项目发现工作台，可先查看推荐方向，再决定是否发起定向采集。");
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "加载项目发现数据失败";
@@ -88,16 +122,48 @@ export default function DiscoveryPage() {
     void refreshAll(initialFilters);
   }, []);
 
-  async function handleCollect() {
+  async function handleCollectBroad() {
     setIsCollecting(true);
     try {
-      const result = await runDiscoveryCollection("ggzy");
+      const result = await runDiscoveryCollection({ source: "ggzy", mode: "broad" });
       await refreshAll(filters);
       setPageMessage(
-        `采集完成：发现 ${result.total_found} 条，新增 ${result.total_new} 条，更新 ${result.total_updated} 条。`
+        `广泛采集完成：发现 ${result.total_found} 条，新增 ${result.total_new} 条，更新 ${result.total_updated} 条。`
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : "手动采集失败";
+      const message = error instanceof Error ? error.message : "广泛采集失败";
+      setPageMessage(message);
+    } finally {
+      setIsCollecting(false);
+    }
+  }
+
+  async function handleCollectTargeted() {
+    if (!selectedDirection) {
+      setPageMessage("当前没有可用的推荐方向，请先补充并处理知识库资料。");
+      return;
+    }
+
+    setIsCollecting(true);
+    try {
+      const result = await runDiscoveryCollection({
+        source: "ggzy",
+        mode: "targeted",
+        profile_key: selectedDirection.profile_key,
+        profile_title: selectedDirection.title,
+        keywords: selectedDirection.keywords,
+        regions: selectedDirection.regions,
+        qualification_terms: selectedDirection.qualification_terms,
+        industry_terms: selectedDirection.industry_terms
+      });
+      const nextFilters = { ...filters, page: 1, profile_key: selectedDirection.profile_key };
+      setFilters(nextFilters);
+      await refreshAll(nextFilters);
+      setPageMessage(
+        `已按“${selectedDirection.title}”完成定向采集：发现 ${result.total_found} 条，新增 ${result.total_new} 条，更新 ${result.total_updated} 条。`
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "定向采集失败";
       setPageMessage(message);
     } finally {
       setIsCollecting(false);
@@ -123,30 +189,35 @@ export default function DiscoveryPage() {
     <AppShell>
       <PageHeader
         eyebrow="Discovery Workspace"
-        title="项目发现"
-        description="手动采集单个公共资源交易网的公开项目，形成内部线索池，并基于现有知识库给出推荐分和推荐理由。"
+        title="按企业能力找项目"
+        description="系统会先根据知识库资料生成推荐采集方向，再按方向发起定向采集。原有筛选区继续保留，作为补充筛选入口。"
         actions={
           <>
-            <button className="ui-button-primary" type="button" onClick={handleCollect} disabled={isCollecting}>
-              {isCollecting ? "采集中..." : "手动采集 ggzy"}
+            <button
+              className="ui-button-primary"
+              type="button"
+              onClick={handleCollectTargeted}
+              disabled={isCollecting || !selectedDirection}
+            >
+              {isCollecting ? "采集中..." : "按推荐方向采集"}
             </button>
-            <Link className="ui-button-secondary" href="/tender">
-              去招标处理
-            </Link>
+            <button className="ui-button-secondary" type="button" onClick={handleCollectBroad} disabled={isCollecting}>
+              广泛采集 ggzy
+            </button>
           </>
         }
         aside={
           <div className="grid grid-cols-2 gap-3">
             <MetricCard
-              label="线索总数"
-              value={String(projects?.total ?? 0)}
-              helper="支持关键词、地区和推荐等级筛选"
+              label="推荐方向"
+              value={String(profile?.directions.length ?? 0)}
+              helper={profile?.has_profile ? "来自企业能力画像" : "等待知识库补料"}
               tone="accent"
             />
             <MetricCard
-              label="最近采集"
-              value={latestRun ? String(latestRun.total_found) : "0"}
-              helper={latestRun ? latestRun.started_at : "尚未采集"}
+              label="线索总数"
+              value={String(projects?.total ?? 0)}
+              helper={latestRun ? `最近采集 ${latestRun.total_found} 条` : "尚未采集"}
             />
           </div>
         }
@@ -154,7 +225,97 @@ export default function DiscoveryPage() {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_360px]">
         <div className="space-y-6">
-          <PanelCard title="筛选项目" description="先做内部筛选和推荐判断，再决定是否进入写标书流程。">
+          <PanelCard
+            title="推荐采集方向"
+            description="优先使用知识库资料反推出更值得追踪的项目方向，减少无头绪找项目。"
+            actions={
+              <Link className="ui-button-ghost" href="/knowledge">
+                去补充知识库
+              </Link>
+            }
+          >
+            {profile?.has_profile && profile.directions.length ? (
+              <div className="space-y-4">
+                <div className="rounded-2xl border bg-surface px-4 py-4 text-sm leading-6 text-muted">
+                  {profile.message}
+                </div>
+                <div className="grid gap-4 lg:grid-cols-3">
+                  {profile.directions.map((direction) => {
+                    const active = selectedDirection?.profile_key === direction.profile_key;
+                    return (
+                      <button
+                        key={direction.profile_key}
+                        type="button"
+                        onClick={() => setSelectedProfileKey(direction.profile_key)}
+                        className={`rounded-2xl border px-4 py-4 text-left transition ${
+                          active
+                            ? "border-accent bg-accent-soft/60"
+                            : "border-line bg-surface hover:border-accent/40 hover:bg-accent-soft/30"
+                        }`}
+                      >
+                        <p className="ui-field-label">{formatConfidence(direction.confidence)}</p>
+                        <p className="mt-3 text-base font-semibold text-ink">{direction.title}</p>
+                        <p className="ui-copy mt-2">{direction.description}</p>
+                        <div className="mt-3 flex flex-wrap gap-2 text-xs text-subtle">
+                          {direction.keywords.slice(0, 3).map((item) => (
+                            <span key={item} className="rounded-full border border-line px-2 py-1">
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                        {direction.gap_message ? (
+                          <p className="mt-3 text-xs leading-5 text-warning">{direction.gap_message}</p>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {selectedDirection ? (
+                  <div className="rounded-2xl border bg-surface px-4 py-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div>
+                        <p className="ui-field-label">推荐原因</p>
+                        <ul className="mt-3 space-y-2 text-sm leading-6 text-muted">
+                          {selectedDirection.reasons.map((item) => (
+                            <li key={item}>- {item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <p className="ui-field-label">采集参数</p>
+                        <div className="mt-3 space-y-3 text-sm leading-6 text-muted">
+                          <p>关键词：{selectedDirection.keywords.join("、") || "未生成"}</p>
+                          <p>地区：{selectedDirection.regions.join("、") || "未限定"}</p>
+                          <p>资质词：{selectedDirection.qualification_terms.join("、") || "未生成"}</p>
+                          <p>行业词：{selectedDirection.industry_terms.join("、") || "未生成"}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 rounded-2xl border bg-panel px-4 py-4">
+                      <p className="ui-field-label">依赖资料</p>
+                      <ul className="mt-3 space-y-2 text-sm leading-6 text-muted">
+                        {selectedDirection.supporting_documents.map((item) => (
+                          <li key={`${item.category}-${item.document_title}-${item.section_title}`}>
+                            - [{item.category}] {item.document_title}
+                            {item.section_title ? ` / ${item.section_title}` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <EmptyState
+                title="还没有可用的企业能力画像"
+                description={profile?.message || "请先上传并处理资质、案例或公司概况资料，再获得推荐采集方向。"}
+              />
+            )}
+          </PanelCard>
+
+          <PanelCard title="补充筛选" description="当推荐方向还不够精确时，可继续用原有筛选条件做补充筛选。">
             <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSearch}>
               <input
                 className="ui-input"
@@ -185,6 +346,19 @@ export default function DiscoveryPage() {
                 <option value="high">高推荐</option>
                 <option value="medium">中推荐</option>
                 <option value="low">低推荐</option>
+              </select>
+
+              <select
+                className="ui-input"
+                value={filters.profile_key}
+                onChange={(event) => setFilters((current) => ({ ...current, profile_key: event.target.value }))}
+              >
+                <option value="">全部方向</option>
+                {profile?.directions.map((direction) => (
+                  <option key={direction.profile_key} value={direction.profile_key}>
+                    {direction.title}
+                  </option>
+                ))}
               </select>
 
               <label className="flex items-center gap-3 text-sm text-ink">
@@ -218,7 +392,7 @@ export default function DiscoveryPage() {
 
           <PanelCard
             title="项目线索池"
-            description="当前只展示项目发现结果，不自动导入写标书主链路。"
+            description="优先展示命中当前方向的项目，再看知识支撑和发布时间。"
             actions={
               projects && projects.total > projects.page_size ? (
                 <div className="flex gap-2">
@@ -234,9 +408,7 @@ export default function DiscoveryPage() {
                     className="ui-button-secondary h-10 px-3"
                     type="button"
                     onClick={() => void changePage(filters.page + 1)}
-                    disabled={
-                      !projects || filters.page >= Math.ceil(projects.total / projects.page_size)
-                    }
+                    disabled={!projects || filters.page >= Math.ceil(projects.total / projects.page_size)}
                   >
                     下一页
                   </button>
@@ -250,7 +422,13 @@ export default function DiscoveryPage() {
                   <article key={item.lead_id} className="rounded-2xl border bg-surface px-4 py-4">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0">
-                        <p className="ui-field-label">{item.notice_type || "待识别公告类型"}</p>
+                        <div className="flex flex-wrap gap-2 text-xs text-subtle">
+                          <span>{item.notice_type || "待识别公告类型"}</span>
+                          {item.profile_title ? <span>命中方向：{item.profile_title}</span> : null}
+                          {item.targeting_match_score > 0 ? (
+                            <span>方向命中分：{item.targeting_match_score}</span>
+                          ) : null}
+                        </div>
                         <h3 className="mt-2 text-base font-semibold text-ink">{item.title}</h3>
                         <div className="mt-3 flex flex-wrap gap-2 text-xs text-subtle">
                           <span>地区：{item.region || "待识别"}</span>
@@ -271,7 +449,7 @@ export default function DiscoveryPage() {
                         </ul>
                       </div>
 
-                      <div className="flex shrink-0 flex-col gap-3 lg:w-[180px]">
+                      <div className="flex shrink-0 flex-col gap-3 lg:w-[200px]">
                         <MetricCard
                           label="推荐分"
                           value={String(item.recommendation_score)}
@@ -295,39 +473,38 @@ export default function DiscoveryPage() {
             ) : (
               <EmptyState
                 title="暂无项目线索"
-                description="先执行一次手动采集，或者调整筛选条件后再查看项目线索。"
+                description="可先按推荐方向采集，也可以用广泛采集建立线索池。"
               />
             )}
           </PanelCard>
         </div>
 
         <div className="space-y-6">
-          <PanelCard title="最近采集摘要" description="每次手动采集都会写入一条执行记录。">
+          <PanelCard title="最近采集摘要" description="每次采集都会保留本次模式和方向参数，便于复盘。">
             {latestRun ? (
               <div className="space-y-4">
-                <MetricCard label="执行状态" value={latestRun.status} helper={latestRun.started_at} tone="accent" />
+                <MetricCard
+                  label="执行状态"
+                  value={latestRun.status}
+                  helper={latestRun.started_at}
+                  tone="accent"
+                />
                 <div className="rounded-2xl border bg-surface px-4 py-4 text-sm leading-6 text-muted">
+                  <p>模式：{latestRun.targeting.mode === "targeted" ? "定向采集" : "广泛采集"}</p>
+                  <p>方向：{latestRun.targeting.profile_title || "未指定"}</p>
                   <p>发现：{latestRun.total_found}</p>
                   <p>新增：{latestRun.total_new}</p>
                   <p>更新：{latestRun.total_updated}</p>
-                  <p>来源：{latestRun.source}</p>
-                  <p>触发方式：{latestRun.trigger_type}</p>
                 </div>
               </div>
             ) : (
-              <EmptyState
-                title="尚未执行采集"
-                description="点击“手动采集 ggzy”后，这里会显示最近一次采集的执行摘要。"
-              />
+              <EmptyState title="尚未执行采集" description="点击采集按钮后，这里会显示最近一次采集摘要。" />
             )}
           </PanelCard>
 
-          <PanelCard title="页面提示" description="这一层只负责发现与推荐，不负责自动写标。">
-            <div
-              aria-live="polite"
-              className="rounded-2xl border bg-surface px-4 py-4 text-sm leading-6 text-muted"
-            >
-              {pageMessage || "系统会先形成项目线索池，用户确认后再自行进入招标处理流程。"}
+          <PanelCard title="页面提示" description="先用企业能力确定方向，再采集，再看推荐结果。">
+            <div aria-live="polite" className="rounded-2xl border bg-surface px-4 py-4 text-sm leading-6 text-muted">
+              {pageMessage || "当前推荐方向为空时，仍可继续使用广泛采集和补充筛选。"}
             </div>
           </PanelCard>
         </div>

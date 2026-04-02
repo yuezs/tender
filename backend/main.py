@@ -3,9 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.router import api_router
 from core.exceptions import register_exception_handlers
+from init_db import init_tables
 
 
 def create_app() -> FastAPI:
+    init_tables()
     app = FastAPI(
         title="AI Tender Assistant API",
         description="MVP backend skeleton for AI tender assistant",

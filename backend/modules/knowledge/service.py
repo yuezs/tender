@@ -258,6 +258,7 @@ class KnowledgeService:
                 {
                     "id": chunk.chunk_id,
                     "document_id": chunk.document_id,
+                    "category": chunk.category,
                     "document_title": chunk.document_title,
                     "section_title": chunk.section_title,
                     "content": chunk.content,

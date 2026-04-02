@@ -134,6 +134,7 @@ class DiscoveryRepository:
         region: str,
         notice_type: str,
         recommendation_level: str,
+        profile_key: str,
         recommended_only: bool,
         page: int,
         page_size: int,
@@ -156,12 +157,15 @@ class DiscoveryRepository:
                 stmt = stmt.where(ProjectLead.notice_type.like(f"%{notice_type}%"))
             if recommendation_level:
                 stmt = stmt.where(ProjectLead.recommendation_level == recommendation_level)
+            if profile_key:
+                stmt = stmt.where(ProjectLead.profile_key == profile_key)
             if recommended_only:
                 stmt = stmt.where(ProjectLead.recommendation_score >= 60)
 
             total = int(db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
 
             stmt = stmt.order_by(
+                ProjectLead.targeting_match_score.desc(),
                 ProjectLead.recommendation_score.desc(),
                 ProjectLead.published_at.desc(),
                 ProjectLead.updated_at.desc(),

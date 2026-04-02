@@ -1,5 +1,3 @@
-import json
-
 from core.config import settings
 from core.exceptions import BusinessException
 from modules.agent.openclaw_client import OpenClawClient
@@ -24,48 +22,18 @@ class JudgeAgent:
     ) -> dict:
         prompt = prompt or self.build_prompt(tender_fields, knowledge_context)
         execution_context = execution_context or {}
+        if not settings.agent_use_real_llm:
+            raise BusinessException(
+                "Tender judge requires real OpenClaw. Set AGENT_USE_REAL_LLM=true and restart backend."
+            )
 
-        if settings.agent_use_real_llm:
-            try:
-                llm_response = self._run_llm(prompt=prompt, execution_context=execution_context)
-                raw_result = self.client.parse_json_object(llm_response["text"])
-                return {
-                    "result": ensure_judge_result(raw_result, knowledge_context, prompt),
-                    "debug": llm_response["debug"],
-                    "prompt": prompt,
-                    "raw_text": llm_response["text"],
-                }
-            except BusinessException as exc:
-                fallback_result = self._build_fallback_result(tender_fields, knowledge_context)
-                return {
-                    "result": ensure_judge_result(fallback_result, knowledge_context, prompt),
-                    "debug": {
-                        "provider": "fallback-rule",
-                        "agent_id": settings.openclaw_agent_judge,
-                        "used_fallback": True,
-                        "failure_reason": exc.message,
-                        "session_key": execution_context.get("session_key", ""),
-                        "run_id": execution_context.get("run_id", ""),
-                        "idempotency_key": execution_context.get("idempotency_key", ""),
-                    },
-                    "prompt": prompt,
-                    "raw_text": json.dumps(fallback_result, ensure_ascii=False, indent=2),
-                }
-
-        fallback_result = self._build_fallback_result(tender_fields, knowledge_context)
+        llm_response = self._run_llm(prompt=prompt, execution_context=execution_context)
+        raw_result = self.client.parse_json_object(llm_response["text"])
         return {
-            "result": ensure_judge_result(fallback_result, knowledge_context, prompt),
-            "debug": {
-                "provider": "fallback-rule",
-                "agent_id": settings.openclaw_agent_judge,
-                "used_fallback": True,
-                "failure_reason": "AGENT_USE_REAL_LLM is disabled.",
-                "session_key": execution_context.get("session_key", ""),
-                "run_id": execution_context.get("run_id", ""),
-                "idempotency_key": execution_context.get("idempotency_key", ""),
-            },
+            "result": ensure_judge_result(raw_result, knowledge_context, prompt),
+            "debug": llm_response["debug"],
             "prompt": prompt,
-            "raw_text": json.dumps(fallback_result, ensure_ascii=False, indent=2),
+            "raw_text": llm_response["text"],
         }
 
     def _run_llm(self, *, prompt: str, execution_context: dict) -> dict:

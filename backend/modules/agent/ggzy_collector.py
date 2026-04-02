@@ -94,23 +94,42 @@ class GgzyCollector:
         "0067": "甘肃",
     }
 
-    def __init__(self) -> None:
+    def __init__(self, targeting: dict[str, Any] | None = None) -> None:
         self.list_url = settings.discovery_ggzy_list_url.strip() or self.BASE_URL
         self.max_projects = max(1, settings.discovery_ggzy_max_projects)
         self.timeout_seconds = max(5, settings.discovery_ggzy_timeout_seconds)
         self.budget_seconds = max(15, settings.discovery_ggzy_budget_seconds)
         self.detail_text_limit = max(500, settings.discovery_ggzy_detail_text_limit)
+        targeting = targeting or {}
+        self.targeting = {
+            "mode": str(targeting.get("mode", "broad")).strip().lower(),
+            "profile_key": str(targeting.get("profile_key", "")).strip(),
+            "profile_title": str(targeting.get("profile_title", "")).strip(),
+            "keywords": self._normalize_targeting_terms(targeting.get("keywords"), limit=6),
+            "regions": self._normalize_targeting_terms(targeting.get("regions"), limit=4),
+            "qualification_terms": self._normalize_targeting_terms(
+                targeting.get("qualification_terms"),
+                limit=5,
+            ),
+            "industry_terms": self._normalize_targeting_terms(
+                targeting.get("industry_terms"),
+                limit=5,
+            ),
+        }
 
     def collect(self) -> dict[str, Any]:
         deadline = time.monotonic() + self.budget_seconds
         list_html = self._fetch_text(self.list_url, referer=self.BASE_URL, deadline=deadline)
         list_items = self._parse_list_items(list_html)
-        projects: list[dict[str, Any]] = []
+        candidate_items = self._prioritize_list_items(list_items)
+        matched_projects: list[dict[str, Any]] = []
+        fallback_projects: list[dict[str, Any]] = []
         failures: list[str] = []
         incomplete_count = 0
         budget_exhausted = False
 
-        for item in list_items[: self.max_projects]:
+        candidate_limit = self.max_projects * 3 if self._is_targeted_mode() else self.max_projects
+        for item in candidate_items[:candidate_limit]:
             if self._remaining_seconds(deadline) < self.MIN_PROJECT_BUDGET_SECONDS:
                 budget_exhausted = True
                 failures.append("collect budget exhausted before visiting all candidate project pages")
@@ -121,28 +140,43 @@ class GgzyCollector:
                     incomplete_count += 1
                     failures.append(f"{item['detail_url']}: incomplete project fields")
                     continue
-                projects.append(project)
+                if self._matches_targeting(project):
+                    matched_projects.append(project)
+                    if len(matched_projects) >= self.max_projects:
+                        break
+                else:
+                    fallback_projects.append(project)
+                    if not self._is_targeted_mode() and len(fallback_projects) >= self.max_projects:
+                        break
             except BusinessException as exc:
                 failures.append(f"{item['detail_url']}: {exc.message}")
                 if self._is_budget_exhausted_message(exc.message):
                     budget_exhausted = True
                     break
 
+        if self._is_targeted_mode():
+            projects = matched_projects[: self.max_projects]
+        else:
+            projects = matched_projects[: self.max_projects] or fallback_projects[: self.max_projects]
         if not projects:
             detail = "; ".join(failures[:3]) if failures else "no supported notices found on list page"
+            if self._is_targeted_mode():
+                raise BusinessException(f"ggzy collection found no projects matching current targeting: {detail}")
             raise BusinessException(f"ggzy collection returned no projects: {detail}")
 
         return {
             "projects": projects,
             "meta": {
                 "list_url": self.list_url,
-                "candidate_count": len(list_items),
+                "candidate_count": len(candidate_items),
                 "project_count": len(projects),
+                "matched_project_count": len(matched_projects),
                 "incomplete_count": incomplete_count,
                 "failure_count": len(failures),
                 "budget_seconds": self.budget_seconds,
                 "budget_exhausted": budget_exhausted,
                 "remaining_seconds": round(self._remaining_seconds(deadline), 2),
+                "targeting": self.targeting,
                 "failures": failures[:5],
             },
         }
@@ -270,6 +304,27 @@ class GgzyCollector:
             )
 
         return items
+
+    def _prioritize_list_items(self, items: list[dict[str, str]]) -> list[dict[str, str]]:
+        if not self._is_targeted_mode():
+            return items
+
+        scored_items: list[tuple[int, dict[str, str]]] = []
+        has_positive_score = False
+        for item in items:
+            score = self._score_targeting_text(
+                " ".join([item.get("title", ""), item.get("detail_url", "")])
+            )
+            if score > 0:
+                has_positive_score = True
+            scored_items.append((score, item))
+
+        scored_items.sort(key=lambda row: row[0], reverse=True)
+        if has_positive_score:
+            return [item for score, item in scored_items if score > 0] + [
+                item for score, item in scored_items if score <= 0
+            ]
+        return [item for _, item in scored_items]
 
     def _fetch_text(self, url: str, *, referer: str, deadline: float | None = None) -> str:
         request_timeout = float(self.timeout_seconds)
@@ -489,6 +544,61 @@ class GgzyCollector:
         if isinstance(qualification_requirements, list) and qualification_requirements:
             optional_hits += 1
         return optional_hits >= 2
+
+    def _matches_targeting(self, project: dict[str, Any]) -> bool:
+        if not self._is_targeted_mode():
+            return False
+        text = " ".join(
+            [
+                str(project.get("title", "")),
+                str(project.get("region", "")),
+                str(project.get("project_code", "")),
+                str(project.get("tender_unit", "")),
+                str(project.get("detail_text", "")),
+                " ".join(project.get("qualification_requirements", [])),
+                " ".join(project.get("keywords", [])),
+            ]
+        )
+        return self._score_targeting_text(text) > 0
+
+    def _score_targeting_text(self, text: str) -> int:
+        if not self._is_targeted_mode():
+            return 0
+        if self.targeting["regions"] and not any(term in text for term in self.targeting["regions"]):
+            return 0
+        score = 0
+        for term in self.targeting["keywords"]:
+            if term in text:
+                score += 4
+        for term in self.targeting["regions"]:
+            if term in text:
+                score += 3
+        for term in self.targeting["qualification_terms"]:
+            if term in text:
+                score += 3
+        for term in self.targeting["industry_terms"]:
+            if term in text:
+                score += 2
+        return score
+
+    def _normalize_targeting_terms(self, value: Any, *, limit: int) -> list[str]:
+        normalized: list[str] = []
+        items = value if isinstance(value, list) else []
+        for item in items:
+            term = self._clean_text(str(item))
+            if term and term not in normalized:
+                normalized.append(term[:80])
+            if len(normalized) >= limit:
+                break
+        return normalized
+
+    def _is_targeted_mode(self) -> bool:
+        if self.targeting.get("mode") != "targeted":
+            return False
+        return any(
+            self.targeting[key]
+            for key in ("keywords", "regions", "qualification_terms", "industry_terms")
+        )
 
     def _remaining_seconds(self, deadline: float) -> float:
         return max(0.0, deadline - time.monotonic())

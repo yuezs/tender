@@ -1,3 +1,4 @@
+import base64
 import json
 from textwrap import dedent
 
@@ -32,7 +33,23 @@ def build_extract_prompt(parsed_text: str) -> str:
     ).strip()
 
 
-def build_collect_prompt(source: str) -> str:
+def build_collect_prompt(source: str, targeting: dict | None = None) -> str:
+    targeting = targeting or {
+        "mode": "broad",
+        "profile_key": "",
+        "profile_title": "",
+        "keywords": [],
+        "regions": [],
+        "qualification_terms": [],
+        "industry_terms": [],
+    }
+    command = "python scripts/collect_ggzy.py"
+    if targeting.get("mode") == "targeted":
+        targeting_payload = base64.urlsafe_b64encode(
+            json.dumps(targeting, ensure_ascii=False).encode("utf-8")
+        ).decode("ascii")
+        command += f" --targeting-json-b64 \"{targeting_payload}\""
+
     return dedent(
         f"""
         You are collect_agent.
@@ -64,7 +81,10 @@ def build_collect_prompt(source: str) -> str:
         Constraints:
         - Source must be ggzy only
         - Start from https://www.ggzy.gov.cn/
-        - In the collect workspace, run: python scripts/collect_ggzy.py
+        - Collect targeting:
+        {json.dumps(targeting, ensure_ascii=False, indent=2)}
+        - In the collect workspace, run exactly:
+          {command}
         - Return the exact JSON printed by that script
         - Do not add markdown, explanations, or commentary
         - Do not download attachments

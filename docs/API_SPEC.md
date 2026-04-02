@@ -50,13 +50,16 @@
 
 ## 项目发现模块
 
-当前只支持 `ggzy` 单站手动采集。
+当前只支持 `ggzy` 单站项目发现，但已支持两种模式：
+
+- `broad`：广泛采集
+- `targeted`：基于企业能力画像的定向采集
 
 ### GET /api/discovery/status
 
 用途：
 - 查看 discovery 模块状态。
-- 查看当前采集模式是否为 `openclaw-agent`、`ggzy-http` 或 `fallback-mock`。
+- 查看当前采集模式是否为 `openclaw-agent` 或 `disabled`。
 
 返回示例：
 
@@ -72,6 +75,7 @@
     "collect_mode": "openclaw-agent",
     "available_routes": [
       "/api/discovery/status",
+      "/api/discovery/profile",
       "/api/discovery/runs",
       "/api/discovery/projects",
       "/api/discovery/projects/{lead_id}"
@@ -84,18 +88,81 @@
 }
 ```
 
+### GET /api/discovery/profile
+
+用途：
+- 返回当前企业能力画像。
+- 返回基于知识库生成的推荐采集方向。
+- 在知识库资料不足时，返回可读提示但不阻塞 discovery 页面。
+
+返回示例：
+
+```json
+{
+  "success": true,
+  "message": "企业能力画像获取成功。",
+  "data": {
+    "has_profile": true,
+    "message": "已根据 5 份已处理资料生成 3 个推荐采集方向。",
+    "document_counts": {
+      "company_profile": 2,
+      "qualifications": 1,
+      "project_cases": 1,
+      "templates": 1
+    },
+    "directions": [
+      {
+        "profile_key": "qualification-track",
+        "title": "资质能力导向项目",
+        "description": "优先追踪与现有资质和资格条件更匹配的项目。",
+        "confidence": "medium",
+        "keywords": ["污水处理", "环保工程"],
+        "regions": ["陕西"],
+        "qualification_terms": ["ISO9001", "环保工程专业承包"],
+        "industry_terms": ["污水处理"],
+        "reasons": [
+          "已处理 1 份资质资料，可反推适合追踪的资格条件。"
+        ],
+        "supporting_documents": [
+          {
+            "category": "qualifications",
+            "document_title": "资质证书",
+            "section_title": "二、资质证书"
+          }
+        ],
+        "gap_message": "缺少项目案例支撑，当前更适合做资格匹配初筛。"
+      }
+    ]
+  }
+}
+```
+
 ### POST /api/discovery/runs
 
 用途：
 - 触发一次手动项目采集。
+- 支持广泛采集和定向采集。
+- 定向采集参数会作为采集意图透传给真实 OpenClaw `collect_agent`。
 
 请求体：
 
 ```json
 {
-  "source": "ggzy"
+  "source": "ggzy",
+  "mode": "targeted",
+  "profile_key": "qualification-track",
+  "profile_title": "资质能力导向项目",
+  "keywords": ["污水处理", "环保工程"],
+  "regions": ["陕西"],
+  "qualification_terms": ["ISO9001", "环保工程专业承包"],
+  "industry_terms": ["污水处理"]
 }
 ```
+
+说明：
+- 若 `mode=broad`，其余 targeting 字段可为空。
+- 若 `mode=targeted` 但未提供有效 targeting 词，后端会自动回退为 `broad`。
+- 定向模式不再静默回退到广泛采集结果；未命中当前方向时接口会直接返回错误。
 
 返回示例：
 
@@ -113,7 +180,16 @@
     "total_found": 2,
     "total_new": 0,
     "total_updated": 2,
-    "error_message": ""
+    "error_message": "",
+    "targeting": {
+      "mode": "targeted",
+      "profile_key": "qualification-track",
+      "profile_title": "资质能力导向项目",
+      "keywords": ["污水处理", "环保工程"],
+      "regions": ["陕西"],
+      "qualification_terms": ["ISO9001", "环保工程专业承包"],
+      "industry_terms": ["污水处理"]
+    }
   }
 }
 ```
@@ -141,7 +217,16 @@
         "total_found": 2,
         "total_new": 0,
         "total_updated": 2,
-        "error_message": ""
+        "error_message": "",
+        "targeting": {
+          "mode": "targeted",
+          "profile_key": "qualification-track",
+          "profile_title": "资质能力导向项目",
+          "keywords": ["污水处理", "环保工程"],
+          "regions": ["陕西"],
+          "qualification_terms": ["ISO9001", "环保工程专业承包"],
+          "industry_terms": ["污水处理"]
+        }
       }
     ]
   }
@@ -152,13 +237,15 @@
 
 用途：
 - 查看 discovery 线索池。
-- 支持关键字、地区、公告类型、推荐等级和是否仅看推荐项目筛选。
+- 支持关键字、地区、公告类型、推荐等级、方向和是否仅看推荐项目筛选。
+- 默认按 `targeting_match_score -> recommendation_score -> published_at` 排序。
 
 查询参数：
 - `keyword`
 - `region`
 - `notice_type`
 - `recommendation_level`
+- `profile_key`
 - `recommended_only`
 - `page`
 - `page_size`
@@ -184,6 +271,9 @@
         "deadline_text": "2026-04-08 09:00:00",
         "recommendation_score": 70,
         "recommendation_level": "medium",
+        "targeting_match_score": 52,
+        "profile_key": "qualification-track",
+        "profile_title": "资质能力导向项目",
         "recommendation_reasons": [
           "命中企业资质材料，可支撑资格匹配说明。"
         ]
@@ -235,11 +325,34 @@
     "match_result": {
       "recommendation_score": 70,
       "recommendation_level": "medium",
+      "knowledge_support_score": 65,
+      "targeting_match_score": 52,
+      "profile_key": "qualification-track",
+      "profile_title": "资质能力导向项目",
       "recommendation_reasons": [
         "命中企业资质材料，可支撑资格匹配说明。"
       ],
+      "targeting_reasons": [
+        "命中关键词：污水处理",
+        "命中地区：甘肃"
+      ],
       "risks": [
         "预算信息缺失，需要补充商务评估。"
+      ],
+      "knowledge_gaps": [
+        "缺少可复用的同类项目案例"
+      ],
+      "matched_keywords": [
+        "污水处理"
+      ],
+      "matched_regions": [
+        "甘肃"
+      ],
+      "matched_qualification_terms": [
+        "ISO9001"
+      ],
+      "matched_industry_terms": [
+        "环保工程"
       ],
       "matched_knowledge": [
         {
@@ -295,8 +408,8 @@
 
 说明：
 - `extract / judge / generate` 对外响应结构保持稳定。
-- 当启用真实 Agent 时，内部优先经由 OpenClaw Gateway 调用。
-- 失败时仍保留规则或模板兜底。
+- 当前招标主链路强制经由本地 OpenClaw Gateway 调用。
+- OpenClaw 不可用、返回空结果或返回非法 JSON 时，接口直接返回可读错误。
 
 ## OpenClaw 与产物
 
@@ -312,6 +425,7 @@
 
 ### discovery 相关环境变量
 
+- `OPENCLAW_TIMEOUT_SECONDS`
 - `DISCOVERY_SOURCE_ENABLED_GGZY`
 - `DISCOVERY_COLLECT_USE_OPENCLAW_AGENT`
 - `DISCOVERY_COLLECT_USE_REAL_GGZY`
@@ -334,6 +448,8 @@
 - 只采集 `ggzy.gov.cn`。
 - 不下载附件，不进入写标书主链路。
 - 默认预算控制为 `95s`，默认最大候选项目数为 `5`，默认单请求超时为 `8s`。
+- OpenClaw Gateway 的默认等待超时为 `240s`。
 - 只返回预算内抓取完成的项目。
 - `detail_text` 默认截断到 `2000` 字。
 - 当 `agent.wait` 超时但 session 已有结果时，后端会回收 session 中的已生成结果，避免误判失败。
+- 定向采集参数会写入数据库快照和 `storage/discovery/agent_runs/<run_id>/input.json`，便于排查。
