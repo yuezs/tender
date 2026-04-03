@@ -179,3 +179,20 @@ npm run dev
 3. 补齐 PDF 解析
 4. 将招标主链路记录迁移到 MySQL
 5. 增加基础自动化测试
+
+## Latest Sync (2026-04-03)
+
+### 1. Tender review workspace
+
+- The results page now follows a "generate outline first, then generate body section by section" workflow.
+- Users can click a chapter to view chapter body content and click a child section to view section body content, both in modal form.
+- The page now shows overall proposal progress, chapter progress, and section generation status.
+- The page supports continuous generation for remaining sections.
+- The page supports both outline download and full Word download.
+- The parse text preview now shows only the first 10 lines by default, and opens full text in a modal.
+
+### 2. Shared modal style
+
+- The knowledge center and the tender results page now reuse the same modal component and style.
+- Full-text preview interactions across knowledge documents, retrieval results, key points, chunk previews, and tender section review are visually consistent.
+
