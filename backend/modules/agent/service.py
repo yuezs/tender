@@ -76,3 +76,27 @@ class AgentService:
             prepared,
             execution_context=execution_context,
         )
+
+    def prepare_generate_section(
+        self,
+        db,
+        tender_record: dict,
+        judge_result: dict,
+        parent_section: dict,
+        child_section: dict,
+    ) -> dict:
+        prepared = self.orchestrator.prepare_generate_section(
+            db,
+            tender_record,
+            judge_result,
+            parent_section,
+            child_section,
+        )
+        prepared["agent_id"] = settings.openclaw_agent_generate
+        return prepared
+
+    def run_generate_section(self, prepared: dict, *, execution_context: dict | None = None) -> dict:
+        return self.orchestrator.run_generate_section_prepared(
+            prepared,
+            execution_context=execution_context,
+        )

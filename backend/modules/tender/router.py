@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+﻿from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from core.database import get_db
 from core.response import success_response
-from modules.tender.schema import TenderProcessRequest
+from modules.tender.schema import TenderProcessRequest, TenderSectionGenerateRequest
 from modules.tender.service import TenderService
 
 router = APIRouter(prefix="/tender", tags=["tender"])
@@ -47,7 +47,41 @@ def judge_tender(payload: TenderProcessRequest, db: Session = Depends(get_db)):
 
 @router.post("/generate")
 def generate_tender(payload: TenderProcessRequest, db: Session = Depends(get_db)):
-    return success_response(service.generate_tender(db, payload.file_id), message="标书初稿生成成功。")
+    return success_response(service.generate_tender(db, payload.file_id), message="标书目录生成成功。")
+
+
+@router.post("/generate/section")
+def generate_tender_section(payload: TenderSectionGenerateRequest, db: Session = Depends(get_db)):
+    return success_response(
+        service.generate_tender_section(db, payload.file_id, payload.section_id),
+        message="章节正文生成成功。",
+    )
+
+
+@router.post("/documents/fulltext")
+def generate_full_text_document(payload: TenderProcessRequest, db: Session = Depends(get_db)):
+    return success_response(
+        service.generate_full_text_document(db, payload.file_id),
+        message="全文 Word 已生成。",
+    )
+
+
+@router.get("/sections/{file_id}/{section_id}")
+def get_tender_section_content(file_id: str, section_id: str):
+    return success_response(
+        service.get_tender_section_content(file_id, section_id),
+        message="章节正文获取成功。",
+    )
+
+
+@router.get("/results/latest")
+def get_latest_tender_result():
+    return success_response(service.get_latest_result(), message="最近一次招标结果获取成功。")
+
+
+@router.get("/results/{file_id}")
+def get_tender_result(file_id: str):
+    return success_response(service.get_tender_result(file_id), message="招标结果获取成功。")
 
 
 @router.get("/documents/{document_id}/download")

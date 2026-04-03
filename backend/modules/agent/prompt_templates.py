@@ -126,10 +126,26 @@ def build_generate_prompt(tender_fields: dict, judge_result: dict, knowledge_con
     return dedent(
         f"""
         You are generate_agent.
-        Generate a first draft for the bid response using tender fields, bid judgement, and enterprise knowledge.
+        First generate a bid proposal outline only.
+        Do not write long body paragraphs yet.
 
         Return exactly one JSON object:
         {{
+          "proposal_outline": [
+            {{
+              "section_id": "1",
+              "title": "",
+              "purpose": "",
+              "children": [
+                {{
+                  "section_id": "1.1",
+                  "title": "",
+                  "purpose": "",
+                  "writing_points": ["", "", ""]
+                }}
+              ]
+            }}
+          ],
           "company_intro": "",
           "project_cases": "",
           "implementation_plan": "",
@@ -147,7 +163,53 @@ def build_generate_prompt(tender_fields: dict, judge_result: dict, knowledge_con
 
         Constraints:
         - Prioritize company_profile, templates, and project_cases
-        - Keep the content business-oriented and reusable
+        - proposal_outline should contain 4 to 6 parent chapters
+        - Each parent chapter should contain 2 to 4 child sections
+        - Child sections should have short writing points, not long paragraphs
+        - Body fields should only contain short drafting notes for later expansion
+        - Keep the output business-oriented and reusable
+        - JSON only
+        """
+    ).strip()
+
+
+def build_generate_section_prompt(
+    tender_fields: dict,
+    judge_result: dict,
+    knowledge_context: dict,
+    parent_section: dict,
+    child_section: dict,
+) -> str:
+    return dedent(
+        f"""
+        You are generate_agent.
+        Write the body content for one bid proposal subsection only.
+
+        Return exactly one JSON object:
+        {{
+          "content": ""
+        }}
+
+        Parent chapter:
+        {json.dumps(parent_section, ensure_ascii=False, indent=2)}
+
+        Current subsection:
+        {json.dumps(child_section, ensure_ascii=False, indent=2)}
+
+        Tender fields:
+        {json.dumps(tender_fields, ensure_ascii=False, indent=2)}
+
+        Judge result:
+        {json.dumps(judge_result, ensure_ascii=False, indent=2)}
+
+        Enterprise knowledge:
+        {knowledge_context.get("context_text") or "No knowledge snippets found."}
+
+        Constraints:
+        - Only generate the current subsection body
+        - Do not repeat unrelated chapters
+        - Keep the content practical, formal, and suitable for bid writing
+        - Prefer concise paragraphs and bullet-friendly wording
         - JSON only
         """
     ).strip()

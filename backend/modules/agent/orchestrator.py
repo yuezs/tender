@@ -56,6 +56,36 @@ class AgentOrchestrator:
             ),
         }
 
+    def prepare_generate_section(
+        self,
+        db,
+        tender_record: dict,
+        judge_result: dict,
+        parent_section: dict,
+        child_section: dict,
+    ) -> dict:
+        tender_fields = tender_record.get("extract_result", {})
+        knowledge_context = self._build_knowledge_context(
+            db,
+            task_type="generate",
+            tender_fields=tender_fields,
+        )
+        return {
+            "agent_id": settings.openclaw_agent_generate,
+            "tender_fields": tender_fields,
+            "judge_result": judge_result,
+            "knowledge_context": knowledge_context,
+            "parent_section": parent_section,
+            "child_section": child_section,
+            "prompt": self.generate_agent.build_section_prompt(
+                tender_fields,
+                judge_result,
+                knowledge_context,
+                parent_section,
+                child_section,
+            ),
+        }
+
     def run_generate_prepared(
         self,
         prepared: dict,
@@ -66,6 +96,22 @@ class AgentOrchestrator:
             tender_fields=prepared["tender_fields"],
             judge_result=prepared["judge_result"],
             knowledge_context=prepared["knowledge_context"],
+            prompt=prepared["prompt"],
+            execution_context=execution_context,
+        )
+
+    def run_generate_section_prepared(
+        self,
+        prepared: dict,
+        *,
+        execution_context: dict | None = None,
+    ) -> dict:
+        return self.generate_agent.run_section(
+            tender_fields=prepared["tender_fields"],
+            judge_result=prepared["judge_result"],
+            knowledge_context=prepared["knowledge_context"],
+            parent_section=prepared["parent_section"],
+            child_section=prepared["child_section"],
             prompt=prepared["prompt"],
             execution_context=execution_context,
         )

@@ -4,6 +4,7 @@ type PageHeaderProps = {
   eyebrow?: string;
   title: string;
   description: string;
+  footer?: ReactNode;
   actions?: ReactNode;
   aside?: ReactNode;
 };
@@ -12,6 +13,7 @@ export default function PageHeader({
   eyebrow,
   title,
   description,
+  footer,
   actions,
   aside
 }: PageHeaderProps) {
@@ -23,6 +25,7 @@ export default function PageHeader({
           {eyebrow ? <p className="ui-kicker">{eyebrow}</p> : null}
           <h1 className="ui-page-title mt-3">{title}</h1>
           <p className="ui-copy mt-3 max-w-2xl">{description}</p>
+          {footer ? <div className="mt-5 flex flex-wrap gap-3">{footer}</div> : null}
         </div>
 
         {(actions || aside) ? (

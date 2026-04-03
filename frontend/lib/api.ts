@@ -3,6 +3,9 @@ import {
   GenerateTenderResponse,
   JudgeTenderResponse,
   ParseTenderResponse,
+  TenderDocumentExportResponse,
+  TenderSectionContentResponse,
+  TenderResultSnapshot,
   UploadTenderResponse
 } from "@/types/tender";
 import {
@@ -88,6 +91,46 @@ export function judgeTender(fileId: string) {
 
 export function generateTender(fileId: string) {
   return postByFileId<GenerateTenderResponse>("/api/tender/generate", fileId);
+}
+
+export function generateTenderFullDocument(fileId: string) {
+  return postByFileId<TenderDocumentExportResponse>("/api/tender/documents/fulltext", fileId);
+}
+
+export async function generateTenderSection(fileId: string, sectionId: string): Promise<TenderSectionContentResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/tender/generate/section`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ file_id: fileId, section_id: sectionId })
+  });
+  return parseResponse<TenderSectionContentResponse>(response);
+}
+
+export async function getTenderSectionContent(
+  fileId: string,
+  sectionId: string
+): Promise<TenderSectionContentResponse> {
+  const encodedSectionId = encodeURIComponent(sectionId);
+  const response = await fetch(`${API_BASE_URL}/api/tender/sections/${fileId}/${encodedSectionId}`, {
+    cache: "no-store"
+  });
+  return parseResponse<TenderSectionContentResponse>(response);
+}
+
+export async function getLatestTenderResult(): Promise<TenderResultSnapshot> {
+  const response = await fetch(`${API_BASE_URL}/api/tender/results/latest`, {
+    cache: "no-store"
+  });
+  return parseResponse<TenderResultSnapshot>(response);
+}
+
+export async function getTenderResult(fileId: string): Promise<TenderResultSnapshot> {
+  const response = await fetch(`${API_BASE_URL}/api/tender/results/${fileId}`, {
+    cache: "no-store"
+  });
+  return parseResponse<TenderResultSnapshot>(response);
 }
 
 function buildQueryString(params: Record<string, string | number | boolean | undefined>) {

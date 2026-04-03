@@ -37,6 +37,11 @@ class TenderService:
                 "/api/tender/extract",
                 "/api/tender/judge",
                 "/api/tender/generate",
+                "/api/tender/results/latest",
+                "/api/tender/results/{file_id}",
+                "/api/tender/generate/section",
+                "/api/tender/sections/{file_id}/{section_id}",
+                "/api/tender/documents/fulltext",
                 "/api/tender/documents/{document_id}/download",
             ],
             "repository_ready": self.repository.is_ready(),
@@ -73,6 +78,10 @@ class TenderService:
                 "extract_debug": {},
                 "judge_debug": {},
                 "generate_debug": {},
+                "parse_error": "",
+                "extract_error": "",
+                "judge_error": "",
+                "generate_error": "",
                 "agent_artifacts": self._empty_agent_artifacts(),
             }
         )
@@ -88,13 +97,30 @@ class TenderService:
         try:
             parsed = self.file_service.parse_tender_file(file_id, record["storage_path"])
         except BusinessException as exc:
-            self.repository.update_record(file_id, {"parse_status": "error"})
+            self.repository.update_record(
+                file_id,
+                {
+                    "parse_status": "error",
+                    "parse_error": exc.message,
+                },
+            )
             raise exc
+        except Exception as exc:
+            message = "招标文件解析失败，请稍后重试。"
+            self.repository.update_record(
+                file_id,
+                {
+                    "parse_status": "error",
+                    "parse_error": message,
+                },
+            )
+            raise BusinessException(message) from exc
 
         updated = self.repository.update_record(
             file_id,
             {
                 "parse_status": "success",
+                "parse_error": "",
                 "parsed_text": parsed["text"],
                 "text_path": parsed["text_path"],
                 "text_preview": parsed["text_preview"],
@@ -113,22 +139,31 @@ class TenderService:
             parsed_text=text,
             fallback_result=fallback_result,
         )
-        agent_payload = self._run_agent_step(
-            file_id=file_id,
-            step="extract",
-            prepared=prepared,
-            input_summary={
-                "file_name": record["file_name"],
-                "parsed_text_preview": text[:1000],
-                "fallback_result": fallback_result,
-            },
-            execute_fn=self.agent_service.run_extract,
-        )
+        try:
+            agent_payload = self._run_agent_step(
+                file_id=file_id,
+                step="extract",
+                prepared=prepared,
+                input_summary={
+                    "file_name": record["file_name"],
+                    "parsed_text_preview": text[:1000],
+                    "fallback_result": fallback_result,
+                },
+                execute_fn=self.agent_service.run_extract,
+            )
+        except BusinessException as exc:
+            self._mark_step_error(file_id, "extract", exc.message)
+            raise
+        except Exception as exc:
+            message = "核心字段抽取失败，请稍后重试。"
+            self._mark_step_error(file_id, "extract", message)
+            raise BusinessException(message) from exc
 
         updated = self.repository.update_record(
             file_id,
             {
                 "extract_status": "success",
+                "extract_error": "",
                 "extract_result": agent_payload["result"],
                 "extract_debug": agent_payload["debug"],
                 "agent_artifacts": self._load_record_agent_artifacts(file_id),
@@ -139,23 +174,32 @@ class TenderService:
     def judge_tender(self, db: Session, file_id: str) -> dict:
         record = self._ensure_extracted_record(file_id)
         prepared = self.agent_service.prepare_judge(db, record)
-        agent_payload = self._run_agent_step(
-            file_id=file_id,
-            step="judge",
-            prepared=prepared,
-            input_summary={
-                "extract_result": record.get("extract_result", {}),
-                "knowledge_context": self._summarize_knowledge_context(
-                    prepared.get("knowledge_context", {})
-                ),
-            },
-            execute_fn=self.agent_service.run_judge,
-        )
+        try:
+            agent_payload = self._run_agent_step(
+                file_id=file_id,
+                step="judge",
+                prepared=prepared,
+                input_summary={
+                    "extract_result": record.get("extract_result", {}),
+                    "knowledge_context": self._summarize_knowledge_context(
+                        prepared.get("knowledge_context", {})
+                    ),
+                },
+                execute_fn=self.agent_service.run_judge,
+            )
+        except BusinessException as exc:
+            self._mark_step_error(file_id, "judge", exc.message)
+            raise
+        except Exception as exc:
+            message = "投标判断失败，请稍后重试。"
+            self._mark_step_error(file_id, "judge", message)
+            raise BusinessException(message) from exc
 
         updated = self.repository.update_record(
             file_id,
             {
                 "judge_status": "success",
+                "judge_error": "",
                 "judge_result": agent_payload["result"],
                 "judge_debug": agent_payload["debug"],
                 "agent_artifacts": self._load_record_agent_artifacts(file_id),
@@ -167,25 +211,39 @@ class TenderService:
         record = self._ensure_judged_record(db, file_id)
         judge_result = record["judge_result"]
         prepared = self.agent_service.prepare_generate(db, record, judge_result)
-        agent_payload = self._run_agent_step(
-            file_id=file_id,
-            step="generate",
-            prepared=prepared,
-            input_summary={
-                "extract_result": record.get("extract_result", {}),
-                "judge_result": judge_result,
-                "knowledge_context": self._summarize_knowledge_context(
-                    prepared.get("knowledge_context", {})
-                ),
-            },
-            execute_fn=self.agent_service.run_generate,
-        )
+        try:
+            agent_payload = self._run_agent_step(
+                file_id=file_id,
+                step="generate",
+                prepared=prepared,
+                input_summary={
+                    "extract_result": record.get("extract_result", {}),
+                    "judge_result": judge_result,
+                    "knowledge_context": self._summarize_knowledge_context(
+                        prepared.get("knowledge_context", {})
+                    ),
+                },
+                execute_fn=self.agent_service.run_generate,
+            )
+        except BusinessException as exc:
+            self._mark_step_error(file_id, "generate", exc.message)
+            raise
+        except Exception as exc:
+            message = "标书初稿生成失败，请稍后重试。"
+            self._mark_step_error(file_id, "generate", message)
+            raise BusinessException(message) from exc
 
+        existing_generate_result = record.get("generate_result", {}) or {}
+        hydrated_generate_result = self._initialize_generate_result(
+            agent_payload["result"],
+            existing_generate_result.get("section_contents", {}),
+        )
         updated = self.repository.update_record(
             file_id,
             {
                 "generate_status": "success",
-                "generate_result": agent_payload["result"],
+                "generate_error": "",
+                "generate_result": hydrated_generate_result,
                 "generate_debug": agent_payload["debug"],
                 "agent_artifacts": self._load_record_agent_artifacts(file_id),
             },
@@ -224,6 +282,141 @@ class TenderService:
             "storage_path": storage_path,
             "file_name": file_name,
         }
+
+    def get_latest_result(self) -> dict:
+        record = self.repository.get_latest_record()
+        return self._serialize_tender_snapshot(record)
+
+    def get_tender_result(self, file_id: str) -> dict:
+        record = self.repository.get_record(file_id)
+        return self._serialize_tender_snapshot(record)
+
+    def generate_full_text_document(self, db: Session, file_id: str) -> dict:
+        record = self._ensure_generated_outline_record(db, file_id)
+        generate_result = self._initialize_generate_result(record.get("generate_result", {}) or {})
+        document_payload = self.document_service.export_full_text(
+            file_id=file_id,
+            tender_record=record,
+            generate_result=generate_result,
+        )
+        self.repository.update_record(
+            file_id,
+            {
+                "fulltext_document": document_payload,
+            },
+        )
+        return {
+            "document_id": document_payload["document_id"],
+            "file_name": document_payload["file_name"],
+            "download_url": document_payload["download_url"],
+            "generated_at": document_payload["generated_at"],
+        }
+
+    def generate_tender_section(self, db: Session, file_id: str, section_id: str) -> dict:
+        record = self._ensure_generated_outline_record(db, file_id)
+        generate_result = self._initialize_generate_result(record.get("generate_result", {}) or {})
+        parent_section, child_section = self._locate_outline_section(
+            generate_result.get("proposal_outline", []),
+            section_id,
+        )
+        if not parent_section or not child_section:
+            raise BusinessException("当前仅支持按小节生成正文，请选择具体小节。", status_code=400)
+
+        section_contents = deepcopy(generate_result.get("section_contents", {}) or {})
+        section_contents[section_id] = self._build_section_content_entry(
+            parent_section=parent_section,
+            child_section=child_section,
+            existing=section_contents.get(section_id),
+            status="loading",
+            content=str((section_contents.get(section_id) or {}).get("content", "")).strip(),
+            error_message="",
+        )
+        self.repository.update_record(
+            file_id,
+            {
+                "generate_result": {
+                    **generate_result,
+                    "section_contents": section_contents,
+                }
+            },
+        )
+
+        prepared = self.agent_service.prepare_generate_section(
+            db,
+            record,
+            record["judge_result"],
+            parent_section,
+            child_section,
+        )
+        step = self._build_section_agent_step(section_id)
+        try:
+            agent_payload = self._run_agent_step(
+                file_id=file_id,
+                step=step,
+                prepared=prepared,
+                input_summary={
+                    "parent_section": parent_section,
+                    "child_section": child_section,
+                    "extract_result": record.get("extract_result", {}),
+                    "judge_result": record.get("judge_result", {}),
+                    "knowledge_context": self._summarize_knowledge_context(
+                        prepared.get("knowledge_context", {})
+                    ),
+                },
+                execute_fn=self.agent_service.run_generate_section,
+            )
+        except BusinessException as exc:
+            self._update_section_content_error(file_id, generate_result, parent_section, child_section, exc.message)
+            raise
+        except Exception as exc:
+            message = "小节正文生成失败，请稍后重试。"
+            self._update_section_content_error(file_id, generate_result, parent_section, child_section, message)
+            raise BusinessException(message) from exc
+
+        refreshed_record = self.repository.get_record(file_id)
+        refreshed_generate_result = self._initialize_generate_result(refreshed_record.get("generate_result", {}) or {})
+        refreshed_section_contents = deepcopy(refreshed_generate_result.get("section_contents", {}) or {})
+        refreshed_section_contents[section_id] = self._build_section_content_entry(
+            parent_section=parent_section,
+            child_section=child_section,
+            existing=refreshed_section_contents.get(section_id),
+            status="success",
+            content=str(agent_payload["result"].get("content", "")).strip(),
+            error_message="",
+            knowledge_used=agent_payload["result"].get("knowledge_used", []),
+            prompt_preview=str(agent_payload["result"].get("prompt_preview", "")).strip(),
+        )
+
+        next_generate_result = {
+            **refreshed_generate_result,
+            "section_contents": refreshed_section_contents,
+        }
+        document_payload = self.document_service.export(
+            file_id=file_id,
+            tender_record=refreshed_record,
+            generate_result=next_generate_result,
+        )
+        next_generate_result = {
+            **next_generate_result,
+            "download_ready": True,
+            "document_id": document_payload["document_id"],
+            "document_file_name": document_payload["file_name"],
+            "download_url": document_payload["download_url"],
+        }
+        updated = self.repository.update_record(
+            file_id,
+            {
+                "generate_result": next_generate_result,
+                "generate_document": document_payload,
+                "agent_artifacts": self._load_record_agent_artifacts(file_id),
+            },
+        )
+        return self._build_section_content_response(updated["generate_result"], section_id)
+
+    def get_tender_section_content(self, file_id: str, section_id: str) -> dict:
+        record = self.repository.get_record(file_id)
+        generate_result = self._initialize_generate_result(record.get("generate_result", {}) or {})
+        return self._build_section_content_response(generate_result, section_id)
 
     def _run_agent_step(
         self,
@@ -395,12 +588,358 @@ class TenderService:
     def _load_record_agent_artifacts(self, file_id: str) -> dict:
         return self.repository.get_record(file_id).get("agent_artifacts", self._empty_agent_artifacts())
 
+    def _ensure_generated_outline_record(self, db: Session, file_id: str) -> dict:
+        record = self._ensure_judged_record(db, file_id)
+        generate_result = record.get("generate_result", {}) or {}
+        if record.get("generate_status") != "success" or not generate_result.get("proposal_outline"):
+            self.generate_tender(db, file_id)
+            record = self.repository.get_record(file_id)
+        return record
+
+    def _initialize_generate_result(
+        self,
+        generate_result: dict,
+        existing_section_contents: dict | None = None,
+    ) -> dict:
+        proposal_outline = self._normalize_outline(generate_result.get("proposal_outline") or [])
+        normalized_generate_result = deepcopy(generate_result)
+        normalized_generate_result["proposal_outline"] = proposal_outline
+
+        section_contents = self._initialize_section_contents(
+            proposal_outline,
+            existing_section_contents or normalized_generate_result.get("section_contents", {}) or {},
+        )
+        normalized_generate_result["section_contents"] = section_contents
+        return normalized_generate_result
+
+    def _normalize_outline(self, proposal_outline: list[dict]) -> list[dict]:
+        normalized_outline: list[dict] = []
+
+        for index, item in enumerate(proposal_outline):
+            if not isinstance(item, dict):
+                continue
+
+            section_id = str(item.get("section_id", "")).strip() or str(index + 1)
+            title = str(item.get("title", "")).strip()
+            if not title:
+                continue
+
+            purpose = str(item.get("purpose", "")).strip() or "按当前目录规划逐节生成正文。"
+            raw_children = item.get("children", []) or []
+            if isinstance(raw_children, list) and raw_children:
+                normalized_children: list[dict] = []
+                for child_index, child in enumerate(raw_children):
+                    if not isinstance(child, dict):
+                        continue
+                    child_title = str(child.get("title", "")).strip()
+                    if not child_title:
+                        continue
+                    normalized_children.append(
+                        {
+                            "section_id": str(child.get("section_id", "")).strip()
+                            or f"{section_id}.{child_index + 1}",
+                            "title": child_title,
+                            "purpose": str(child.get("purpose", "")).strip()
+                            or "按本小节目录要求生成正文。",
+                            "writing_points": [
+                                str(point).strip()
+                                for point in (child.get("writing_points", []) or [])
+                                if str(point).strip()
+                            ][:5],
+                        }
+                    )
+            else:
+                normalized_children = [
+                    {
+                        "section_id": f"{section_id}.1",
+                        "title": f"{title}正文",
+                        "purpose": purpose,
+                        "writing_points": [
+                            str(point).strip()
+                            for point in (item.get("writing_points", []) or [])
+                            if str(point).strip()
+                        ][:5],
+                    }
+                ]
+
+            normalized_outline.append(
+                {
+                    "section_id": section_id,
+                    "title": title,
+                    "purpose": purpose,
+                    "children": normalized_children,
+                }
+            )
+
+        return normalized_outline
+
+    def _initialize_section_contents(self, proposal_outline: list[dict], existing: dict) -> dict[str, dict]:
+        normalized: dict[str, dict] = {}
+        existing = existing if isinstance(existing, dict) else {}
+
+        for parent_section in proposal_outline:
+            parent_section_id = str(parent_section.get("section_id", "")).strip()
+            for child_section in parent_section.get("children", []) or []:
+                section_id = str(child_section.get("section_id", "")).strip()
+                if not section_id:
+                    continue
+                normalized[section_id] = self._build_section_content_entry(
+                    parent_section=parent_section,
+                    child_section=child_section,
+                    existing=existing.get(section_id),
+                )
+
+        for section_id, payload in existing.items():
+            if section_id in normalized:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            normalized[section_id] = {
+                "section_id": str(payload.get("section_id", section_id)).strip() or str(section_id),
+                "parent_section_id": str(payload.get("parent_section_id", "")).strip(),
+                "title": str(payload.get("title", "未命名小节")).strip() or "未命名小节",
+                "status": str(payload.get("status", "pending")).strip() or "pending",
+                "content": str(payload.get("content", "")).strip(),
+                "error_message": str(payload.get("error_message", "")).strip(),
+                "updated_at": str(payload.get("updated_at", "")).strip(),
+                "knowledge_used": payload.get("knowledge_used", []) or [],
+                "prompt_preview": str(payload.get("prompt_preview", "")).strip(),
+            }
+
+        return normalized
+
+    def _build_section_content_entry(
+        self,
+        *,
+        parent_section: dict,
+        child_section: dict,
+        existing: dict | None = None,
+        status: str | None = None,
+        content: str | None = None,
+        error_message: str | None = None,
+        knowledge_used: list[dict] | None = None,
+        prompt_preview: str | None = None,
+    ) -> dict:
+        existing = existing if isinstance(existing, dict) else {}
+        return {
+            "section_id": str(child_section.get("section_id", "")).strip(),
+            "parent_section_id": str(parent_section.get("section_id", "")).strip(),
+            "title": str(child_section.get("title", "未命名小节")).strip() or "未命名小节",
+            "status": status or str(existing.get("status", "pending")).strip() or "pending",
+            "content": content if content is not None else str(existing.get("content", "")).strip(),
+            "error_message": (
+                error_message
+                if error_message is not None
+                else str(existing.get("error_message", "")).strip()
+            ),
+            "updated_at": self._utc_now() if status else str(existing.get("updated_at", "")).strip(),
+            "knowledge_used": knowledge_used if knowledge_used is not None else existing.get("knowledge_used", []) or [],
+            "prompt_preview": (
+                prompt_preview
+                if prompt_preview is not None
+                else str(existing.get("prompt_preview", "")).strip()
+            ),
+        }
+
+    def _locate_outline_section(self, proposal_outline: list[dict], section_id: str) -> tuple[dict | None, dict | None]:
+        target_section_id = str(section_id).strip()
+        for parent_section in proposal_outline:
+            parent_section_id = str(parent_section.get("section_id", "")).strip()
+            if parent_section_id == target_section_id:
+                return parent_section, None
+            for child_section in parent_section.get("children", []) or []:
+                child_section_id = str(child_section.get("section_id", "")).strip()
+                if child_section_id == target_section_id:
+                    return parent_section, child_section
+        return None, None
+
+    def _build_section_content_response(self, generate_result: dict, section_id: str) -> dict:
+        proposal_outline = generate_result.get("proposal_outline", []) or []
+        section_contents = generate_result.get("section_contents", {}) or {}
+        parent_section, child_section = self._locate_outline_section(proposal_outline, section_id)
+        if not parent_section:
+            raise BusinessException("未找到对应目录章节。", status_code=404)
+
+        if child_section:
+            payload = section_contents.get(section_id) or self._build_section_content_entry(
+                parent_section=parent_section,
+                child_section=child_section,
+            )
+            content = str(payload.get("content", "")).strip()
+            if not content:
+                content = "当前小节尚未生成正文，请先点击“生成正文”。"
+            return {
+                "section_id": str(payload.get("section_id", section_id)).strip(),
+                "parent_section_id": str(payload.get("parent_section_id", "")).strip(),
+                "title": str(payload.get("title", "未命名小节")).strip() or "未命名小节",
+                "scope": "section",
+                "status": str(payload.get("status", "pending")).strip() or "pending",
+                "content": content,
+                "completed_children": 1 if str(payload.get("status", "")).strip() == "success" else 0,
+                "total_children": 1,
+            }
+
+        child_sections = parent_section.get("children", []) or []
+        completed_children = 0
+        rendered_sections: list[str] = []
+        for item in child_sections:
+            child_section_id = str(item.get("section_id", "")).strip()
+            child_title = str(item.get("title", "未命名小节")).strip() or "未命名小节"
+            payload = section_contents.get(child_section_id) or self._build_section_content_entry(
+                parent_section=parent_section,
+                child_section=item,
+            )
+            child_status = str(payload.get("status", "pending")).strip() or "pending"
+            if child_status == "success":
+                completed_children += 1
+            child_content = str(payload.get("content", "")).strip() or "当前小节尚未生成正文。"
+            rendered_sections.append(f"{child_section_id} {child_title}\n{child_content}")
+
+        total_children = len(child_sections)
+        parent_status = "success" if total_children and completed_children == total_children else "pending"
+        if any(str((section_contents.get(str(item.get('section_id', '')).strip()) or {}).get("status", "")).strip() == "loading" for item in child_sections):
+            parent_status = "loading"
+        elif any(str((section_contents.get(str(item.get('section_id', '')).strip()) or {}).get("status", "")).strip() == "error" for item in child_sections):
+            parent_status = "error" if completed_children == 0 else parent_status
+
+        return {
+            "section_id": str(parent_section.get("section_id", "")).strip(),
+            "parent_section_id": "",
+            "title": str(parent_section.get("title", "未命名章节")).strip() or "未命名章节",
+            "scope": "chapter",
+            "status": parent_status,
+            "content": "\n\n".join(rendered_sections) if rendered_sections else "当前大章节下暂无小节内容。",
+            "completed_children": completed_children,
+            "total_children": total_children,
+        }
+
+    def _update_section_content_error(
+        self,
+        file_id: str,
+        generate_result: dict,
+        parent_section: dict,
+        child_section: dict,
+        message: str,
+    ) -> None:
+        section_id = str(child_section.get("section_id", "")).strip()
+        section_contents = deepcopy(generate_result.get("section_contents", {}) or {})
+        section_contents[section_id] = self._build_section_content_entry(
+            parent_section=parent_section,
+            child_section=child_section,
+            existing=section_contents.get(section_id),
+            status="error",
+            content=str((section_contents.get(section_id) or {}).get("content", "")).strip(),
+            error_message=message,
+        )
+        self.repository.update_record(
+            file_id,
+            {
+                "generate_result": {
+                    **generate_result,
+                    "section_contents": section_contents,
+                }
+            },
+        )
+
+    def _build_section_agent_step(self, section_id: str) -> str:
+        normalized = re.sub(r"[^0-9A-Za-z_-]+", "-", str(section_id).strip())
+        return f"generate-section-{normalized}"
+
+    def _mark_step_error(self, file_id: str, step: str, message: str) -> None:
+        status_field = f"{step}_status"
+        error_field = f"{step}_error"
+        self.repository.update_record(
+            file_id,
+            {
+                status_field: "error",
+                error_field: message,
+            },
+        )
+
     def _empty_agent_artifacts(self) -> dict:
         return {
             "extract": {},
             "judge": {},
             "generate": {},
         }
+
+    def _serialize_tender_snapshot(self, record: dict) -> dict:
+        file_id = str(record.get("file_id", "")).strip()
+        return {
+            "uploaded_at": str(record.get("created_at", "")).strip(),
+            "updated_at": str(record.get("updated_at", "")).strip(),
+            "upload": {
+                "file_id": file_id,
+                "file_name": str(record.get("file_name", "")).strip(),
+                "source_type": str(record.get("source_type", "")).strip(),
+                "extension": str(record.get("extension", "")).strip(),
+            },
+            "steps": {
+                "upload": {
+                    "status": "success",
+                    "message": "文件已上传" if file_id else "未上传文件",
+                },
+                "parse": self._build_step_state(record, "parse"),
+                "extract": self._build_step_state(record, "extract"),
+                "judge": self._build_step_state(record, "judge"),
+                "generate": self._build_step_state(record, "generate"),
+            },
+            "parse": {
+                "file_id": file_id,
+                "text": str(record.get("parsed_text", "")),
+            },
+            "extract": record.get("extract_result", {}) or {},
+            "judge": record.get("judge_result", {}) or {},
+            "generate": self._initialize_generate_result(record.get("generate_result", {}) or {}),
+        }
+
+    def _build_step_state(self, record: dict, step: str) -> dict:
+        status = str(record.get(f"{step}_status", "pending") or "pending").strip() or "pending"
+        if status == "success":
+            return {"status": "success", "message": self._get_step_success_message(step)}
+        if status == "error":
+            return {
+                "status": "error",
+                "message": self._get_step_error_message(record, step),
+            }
+        if status == "loading":
+            return {"status": "loading", "message": self._get_step_loading_message(step)}
+        return {"status": "pending", "message": self._get_step_pending_message(step)}
+
+    def _get_step_error_message(self, record: dict, step: str) -> str:
+        record_message = str(record.get(f"{step}_error", "") or "").strip()
+        if record_message:
+            return record_message
+        if step in self._empty_agent_artifacts():
+            status_payload = self.artifact_service.read_status(str(record.get("file_id", "")), step)
+            artifact_message = str(status_payload.get("error", "") or "").strip()
+            if artifact_message:
+                return artifact_message
+        return f"{step} step failed"
+
+    def _get_step_success_message(self, step: str) -> str:
+        return {
+            "parse": "文本解析完成",
+            "extract": "字段抽取完成",
+            "judge": "投标判断完成",
+            "generate": "标书生成完成",
+        }.get(step, "处理完成")
+
+    def _get_step_loading_message(self, step: str) -> str:
+        return {
+            "parse": "正在解析文本...",
+            "extract": "正在抽取核心字段...",
+            "judge": "正在生成投标建议...",
+            "generate": "正在生成标书初稿...",
+        }.get(step, "处理中...")
+
+    def _get_step_pending_message(self, step: str) -> str:
+        return {
+            "parse": "等待解析",
+            "extract": "等待抽取",
+            "judge": "等待判断",
+            "generate": "等待生成",
+        }.get(step, "等待处理")
 
     def _summarize_knowledge_context(self, knowledge_context: dict) -> dict:
         chunks = knowledge_context.get("chunks", [])
