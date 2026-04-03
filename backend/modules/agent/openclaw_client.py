@@ -125,8 +125,6 @@ class GatewayRpcConnection(AbstractContextManager):
             "operator.read",
             "operator.write",
             "operator.admin",
-            "operator.approvals",
-            "operator.pairing",
         ]
         platform_name = self._resolve_platform_name()
         device_identity = self._load_or_create_device_identity()
@@ -309,7 +307,7 @@ class GatewayRpcConnection(AbstractContextManager):
     def _resolve_platform_name(self) -> str:
         system_name = platform.system().lower()
         if system_name == "windows":
-            return "win32"
+            return "windows"
         return system_name or "unknown"
 
     def _sign_device_payload(self, private_key_pem: str, payload: str) -> str:

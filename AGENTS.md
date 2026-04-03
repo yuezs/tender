@@ -112,12 +112,12 @@
 ---
 
 ## 知识库约束
-当前只做简易版知识库，支持 4 类资料：
-1. company_profile
-2. qualifications
-3. project_cases
-4. templates
-
+当前资料中心统一支持 5 类资料：
+1. `company_profile`：公司介绍
+2. `business_info`：商务信息
+3. `qualifications`：资质证书
+4. `templates`：技术方案
+5. `project_cases`：项目案例
 能力范围：
 - 上传
 - 分类
@@ -140,7 +140,7 @@
 - 仅支持 `txt / docx`
 - `docx` 需按段落、标题、列表、表格顺序解析
 - 已支持段内编号标题识别与长段再切分
-- `company_profile` 当前已增加规则版重点句提取
+- 5 类资料均已支持规则版重点内容提取
 
 当前不做：
 - 向量库

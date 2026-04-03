@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, MouseEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, CSSProperties, MouseEvent, useEffect, useMemo, useState } from "react";
 
 import AppShell from "@/components/app-shell";
 import MetricCard from "@/components/ui/metric-card";
@@ -18,6 +18,7 @@ import {
   KnowledgeDocumentContentResponse,
   KnowledgeCategory,
   KnowledgeChunkItem,
+  KnowledgeChunkPreviewItem,
   KnowledgeDocumentItem,
   KnowledgeDocumentStatus,
   ProcessKnowledgeDocumentResponse
@@ -25,9 +26,10 @@ import {
 
 const categories = [
   { title: "公司介绍", code: "company_profile" },
+  { title: "商务信息", code: "business_info" },
   { title: "资质证书", code: "qualifications" },
+  { title: "技术方案", code: "templates" },
   { title: "项目案例", code: "project_cases" },
-  { title: "模板素材", code: "templates" }
 ] as const;
 
 const categoryOptions = categories.map((item) => item.code) as KnowledgeCategory[];
@@ -52,6 +54,20 @@ const EMPTY_PARSE_SUMMARY = {
   character_count: 0,
   line_count: 0
 } as const;
+
+const THREE_LINE_CLAMP_STYLE: CSSProperties = {
+  display: "-webkit-box",
+  WebkitBoxOrient: "vertical",
+  WebkitLineClamp: 3,
+  overflow: "hidden"
+};
+
+const TWO_LINE_CLAMP_STYLE: CSSProperties = {
+  display: "-webkit-box",
+  WebkitBoxOrient: "vertical",
+  WebkitLineClamp: 2,
+  overflow: "hidden"
+};
 
 function normalizeCsvList(raw: string) {
   return raw
@@ -135,6 +151,8 @@ export default function KnowledgePage() {
   const [viewingContentId, setViewingContentId] = useState("");
   const [viewingDocument, setViewingDocument] = useState<KnowledgeDocumentContentResponse | null>(null);
   const [deletingId, setDeletingId] = useState("");
+  const [selectedKeyPoint, setSelectedKeyPoint] = useState<string | null>(null);
+  const [selectedChunkPreviewItem, setSelectedChunkPreviewItem] = useState<KnowledgeChunkPreviewItem | null>(null);
 
   const [retrieveCategory, setRetrieveCategory] = useState<KnowledgeCategory | "">("");
   const [retrieveQuery, setRetrieveQuery] = useState("");
@@ -159,6 +177,8 @@ export default function KnowledgePage() {
   const latestKeyPoints = lastProcessResult?.key_points ?? [];
   const latestChunkPreview = lastProcessResult?.chunk_preview ?? [];
   const latestWarningCount = latestWarnings.length;
+  const latestKeyPointPreview = latestKeyPoints.slice(0, 3);
+  const latestChunkPreviewCards = latestChunkPreview.slice(0, 3);
 
   async function refreshDocuments(nextFilters?: {
     category?: KnowledgeCategory | "";
@@ -394,7 +414,7 @@ export default function KnowledgePage() {
             </div>
 
             <div className="grid w-full grid-cols-2 gap-3">
-              <MetricCard label="资料分类" value="4 类" helper="固定分类，按当前 MVP 范围执行" tone="accent" />
+              <MetricCard label="资料分类" value="5 类" helper="固定分类，按当前 MVP 范围执行" tone="accent" />
               <MetricCard
                 label="已处理文档"
                 value={`${processedCount}/${documents.length}`}
@@ -442,7 +462,7 @@ export default function KnowledgePage() {
                 <p className="ui-copy mt-2">
                   {selectedFile
                     ? `文件大小约 ${(selectedFile.size / 1024).toFixed(1)} KB`
-                    : "建议上传公司介绍、资质证书、项目案例和模板素材等可复用资料。"}
+                    : "建议上传公司介绍、商务信息、资质证书、技术方案和项目案例等可复用资料。"}
                 </p>
               </label>
 
@@ -721,13 +741,22 @@ export default function KnowledgePage() {
                 <div className="rounded-2xl border border-line bg-surface px-4 py-4">
                   <p className="ui-field-label">重点内容</p>
                   {latestKeyPoints.length ? (
-                    <ul className="mt-3 space-y-2 text-sm text-muted">
-                      {latestKeyPoints.map((point) => (
-                        <li key={point} className="rounded-xl bg-accent-soft px-3 py-2 text-ink">
-                          {point}
-                        </li>
+                    <div className="mt-3 space-y-2 text-sm text-muted">
+                      {latestKeyPointPreview.map((point) => (
+                        <button
+                          key={point}
+                          type="button"
+                          className="w-full rounded-xl bg-accent-soft px-3 py-2 text-left text-ink transition hover:bg-accent-soft/70"
+                          onClick={() => setSelectedKeyPoint(point)}
+                          title={point}
+                        >
+                          <span className="block leading-6" style={THREE_LINE_CLAMP_STYLE}>
+                            {point}
+                          </span>
+                        </button>
                       ))}
-                    </ul>
+                      <p className="ui-copy text-xs">最多展示 3 条，点击可查看全文。</p>
+                    </div>
                   ) : (
                     <p className="ui-copy mt-3">当前还没有提取到重点内容。</p>
                   )}
@@ -752,15 +781,26 @@ export default function KnowledgePage() {
                   <p className="ui-field-label">切块预览</p>
                   <div className="mt-3 space-y-3">
                     {latestChunkPreview.length ? (
-                      latestChunkPreview.map((chunk, index) => (
-                        <article key={`${chunk.section_title}-${index}`} className="ui-panel-muted px-3 py-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-sm font-semibold text-ink">{chunk.section_title}</p>
-                            <span className="text-xs text-subtle">{chunk.char_count} 字符</span>
-                          </div>
-                          <p className="ui-copy mt-2 whitespace-pre-wrap break-words">{chunk.content_preview}</p>
-                        </article>
-                      ))
+                      <>
+                        {latestChunkPreviewCards.map((chunk, index) => (
+                          <button
+                            key={`${chunk.section_title}-${index}`}
+                            type="button"
+                            className="ui-panel-muted block w-full px-3 py-3 text-left transition hover:border-accent/30 hover:bg-accent-soft/40"
+                            onClick={() => setSelectedChunkPreviewItem(chunk)}
+                            title={chunk.content_preview}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="truncate text-sm font-semibold text-ink">{chunk.section_title}</p>
+                              <span className="shrink-0 text-xs text-subtle">{chunk.char_count} 字符</span>
+                            </div>
+                            <p className="ui-copy mt-2 break-words leading-6" style={TWO_LINE_CLAMP_STYLE}>
+                              {chunk.content_preview}
+                            </p>
+                          </button>
+                        ))}
+                        <p className="ui-copy text-xs">最多展示 3 条，点击可查看全文。</p>
+                      </>
                     ) : (
                       <p className="ui-copy">暂无可预览的知识块。</p>
                     )}
@@ -931,6 +971,61 @@ export default function KnowledgePage() {
             <div className="overflow-y-auto px-5 py-4">
               <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-muted">
                 {selectedRetrievedChunk.content}
+              </pre>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedKeyPoint ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6"
+          onClick={() => setSelectedKeyPoint(null)}
+        >
+          <div
+            className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-line bg-white shadow-panel"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
+              <div className="space-y-2">
+                <p className="ui-field-label">重点内容全文</p>
+                <h2 className="text-lg font-semibold text-ink">重点内容</h2>
+              </div>
+              <button className="ui-button-secondary" type="button" onClick={() => setSelectedKeyPoint(null)}>
+                关闭
+              </button>
+            </div>
+
+            <div className="overflow-y-auto px-5 py-4">
+              <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-muted">{selectedKeyPoint}</pre>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedChunkPreviewItem ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6"
+          onClick={() => setSelectedChunkPreviewItem(null)}
+        >
+          <div
+            className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-line bg-white shadow-panel"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
+              <div className="space-y-2">
+                <p className="ui-field-label">切块预览全文</p>
+                <h2 className="text-lg font-semibold text-ink">{selectedChunkPreviewItem.section_title}</h2>
+                <p className="text-sm text-subtle">{selectedChunkPreviewItem.char_count} 字符</p>
+              </div>
+              <button className="ui-button-secondary" type="button" onClick={() => setSelectedChunkPreviewItem(null)}>
+                关闭
+              </button>
+            </div>
+
+            <div className="overflow-y-auto px-5 py-4">
+              <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-muted">
+                {selectedChunkPreviewItem.content_preview}
               </pre>
             </div>
           </div>

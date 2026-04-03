@@ -124,6 +124,14 @@ class KnowledgeService:
                 warnings.append("Only one chunk was generated for this category; review the source structure.")
             if document.category == "company_profile" and not key_points:
                 warnings.append("No clear company profile key points were extracted; review the source structure.")
+            if document.category == "business_info" and not key_points:
+                warnings.append("No clear business information key points were extracted; review the source structure.")
+            if document.category == "qualifications" and not key_points:
+                warnings.append("No clear qualification key points were extracted; review the source structure.")
+            if document.category == "project_cases" and not key_points:
+                warnings.append("No clear project case key points were extracted; review the source structure.")
+            if document.category == "templates" and not key_points:
+                warnings.append("No clear template key points were extracted; review the source structure.")
 
             chunk_records = []
             for chunk in chunks:
