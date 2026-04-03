@@ -1,5 +1,6 @@
 from core.config import settings
 from core.exceptions import BusinessException
+from modules.agent.ggzy_collector import GgzyCollector
 from modules.agent.openclaw_client import OpenClawClient
 from modules.agent.output_parser import ensure_collect_result
 from modules.agent.prompt_templates import build_collect_prompt
@@ -32,20 +33,37 @@ class CollectAgent:
                 "Discovery collect requires DISCOVERY_COLLECT_USE_OPENCLAW_AGENT=true."
             )
 
-        llm_response = self._run_llm(prompt=prompt, execution_context=execution_context)
-        raw_result = self.client.parse_json_object(llm_response["text"])
-        normalized_result = ensure_collect_result(raw_result)
-        if not normalized_result["projects"]:
-            raise BusinessException("OpenClaw collect agent returned no collectable projects.")
-        return {
-            "result": normalized_result,
-            "debug": {
-                **llm_response["debug"],
-                "collect_mode": "openclaw-agent",
-            },
-            "prompt": prompt,
-            "raw_text": llm_response["text"],
-        }
+        try:
+            llm_response = self._run_llm(prompt=prompt, execution_context=execution_context)
+            raw_result = self.client.parse_json_object(llm_response["text"])
+            normalized_result = ensure_collect_result(raw_result)
+            if not normalized_result["projects"]:
+                raise BusinessException("OpenClaw collect agent returned no collectable projects.")
+            return {
+                "result": normalized_result,
+                "debug": {
+                    **llm_response["debug"],
+                    "collect_mode": "openclaw-agent",
+                },
+                "prompt": prompt,
+                "raw_text": llm_response["text"],
+            }
+        except BusinessException as exc:
+            if source != "ggzy" or not settings.discovery_collect_use_real_ggzy:
+                raise
+            direct_result = self._run_direct_ggzy_collect(targeting=targeting or {})
+            return {
+                "result": direct_result,
+                "debug": {
+                    "provider": "local-ggzy-collector",
+                    "agent_id": settings.openclaw_agent_collect,
+                    "collect_mode": "ggzy-direct-fallback",
+                    "fallback_reason": exc.message,
+                    "used_fallback": True,
+                },
+                "prompt": prompt,
+                "raw_text": "",
+            }
 
     def _run_llm(self, *, prompt: str, execution_context: dict) -> dict:
         run_id = str(execution_context.get("run_id", "")).strip()
@@ -58,3 +76,10 @@ class CollectAgent:
         if run_id:
             return self.client.wait_agent_run(run_id=run_id, **common_kwargs)
         return self.client.run_agent(**common_kwargs)
+
+    def _run_direct_ggzy_collect(self, *, targeting: dict) -> dict:
+        payload = GgzyCollector(targeting=targeting).collect()
+        normalized_result = ensure_collect_result(payload)
+        if not normalized_result["projects"]:
+            raise BusinessException("GGZY collector returned no collectable projects.")
+        return normalized_result

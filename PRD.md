@@ -53,11 +53,11 @@
 
 支持资料类型：
 
-- `company_profile`
-- `qualifications`
-- `project_cases`
-- `templates`
-
+- `company_profile`：公司介绍
+- `business_info`：商务信息
+- `qualifications`：资质证书
+- `templates`：技术方案
+- `project_cases`：项目案例
 支持能力：
 
 - 文档上传
@@ -77,20 +77,29 @@
 - 仅支持 `txt / docx`
 - `docx` 需支持段落、标题、列表、表格顺序解析
 - 支持段内编号标题识别与长段再切分
-- `company_profile` 当前已增加规则版重点句提取
+- 5 类资料均已支持规则版重点内容提取
 - 处理结果需返回 `parse_summary / warnings / key_points / chunk_preview`
 
-### 3. Agent 调用链路
+### 3. 项目发现工作台
 
-当前只允许以下 4 个 Agent：
+- 支持 `ggzy` 单站广泛采集与按推荐方向采集
+- 广泛采集当前接入全国公共资源交易平台“交易公开”公开列表接口
+- 当前单次广泛采集默认可返回 100+ 条项目线索
+- 项目线索池默认按 `recommendation_score` 降序展示
 
-1. `extract_agent`
-2. `judge_agent`
-3. `generate_agent`
-4. `orchestrator`
+### 4. Agent 调用链路
+
+当前只允许以下 5 个 Agent：
+
+1. `collect_agent`
+2. `extract_agent`
+3. `judge_agent`
+4. `generate_agent`
+5. `orchestrator`
 
 当前要求：
 
+- `collect_agent` 仅用于项目发现，不下载附件，不进入写标书主链路
 - Agent 不直接访问数据库
 - 由 backend orchestrator 先检索知识
 - 将知识片段整理成上下文后再喂给 Agent

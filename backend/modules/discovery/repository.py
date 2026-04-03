@@ -165,8 +165,8 @@ class DiscoveryRepository:
             total = int(db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
 
             stmt = stmt.order_by(
-                ProjectLead.targeting_match_score.desc(),
                 ProjectLead.recommendation_score.desc(),
+                ProjectLead.targeting_match_score.desc(),
                 ProjectLead.published_at.desc(),
                 ProjectLead.updated_at.desc(),
             )

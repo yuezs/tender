@@ -1,4 +1,9 @@
-export type KnowledgeCategory = "company_profile" | "qualifications" | "project_cases" | "templates";
+export type KnowledgeCategory =
+  | "company_profile"
+  | "business_info"
+  | "qualifications"
+  | "project_cases"
+  | "templates";
 
 export type KnowledgeDocumentStatus = "uploaded" | "processed" | "error";
 

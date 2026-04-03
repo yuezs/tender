@@ -158,6 +158,41 @@ class DiscoveryService:
             )
             return self._serialize_run(updated_run)
         except BusinessException as exc:
+            if self._is_empty_collection_result(exc.message):
+                finished_at = datetime.utcnow()
+                self.artifact_service.write_output(
+                    run_id,
+                    {
+                        "raw_text": "",
+                        "parsed_result": {"projects": []},
+                        "debug": {
+                            "collect_mode": "no-results",
+                            "message": exc.message,
+                        },
+                    },
+                )
+                self.artifact_service.write_status(
+                    run_id,
+                    {
+                        "state": "success",
+                        "started_at": started_at.isoformat(),
+                        "finished_at": finished_at.isoformat(),
+                        "error": "",
+                    },
+                )
+                updated_run = self.repository.update_run(
+                    db,
+                    run.run_id,
+                    {
+                        "status": "success",
+                        "finished_at": finished_at,
+                        "total_found": 0,
+                        "total_new": 0,
+                        "total_updated": 0,
+                        "error_message": exc.message,
+                    },
+                )
+                return self._serialize_run(updated_run)
             self.artifact_service.write_status(
                 run_id,
                 {
@@ -865,18 +900,6 @@ class DiscoveryService:
         )
         matched_industry_terms = self._match_terms(targeting.get("industry_terms", []), haystacks)
 
-        if targeting.get("regions") and not matched_regions:
-            return {
-                "targeting_match_score": 0,
-                "profile_key": str(targeting.get("profile_key", "")),
-                "profile_title": str(targeting.get("profile_title", "")),
-                "targeting_reasons": ["未命中当前定向采集要求的地区条件。"],
-                "matched_keywords": matched_keywords,
-                "matched_regions": matched_regions,
-                "matched_qualification_terms": matched_qualification_terms,
-                "matched_industry_terms": matched_industry_terms,
-            }
-
         score = 0
         reasons: list[str] = []
         if matched_keywords:
@@ -885,6 +908,8 @@ class DiscoveryService:
         if matched_regions:
             score += min(20, 8 + len(matched_regions) * 6)
             reasons.append(f"命中地区：{'、'.join(matched_regions[:3])}")
+        elif targeting.get("regions"):
+            reasons.append("未命中推荐地区，但已按非强制条件继续保留。")
         if matched_qualification_terms:
             score += min(25, 10 + len(matched_qualification_terms) * 5)
             reasons.append(f"命中资格条件：{'、'.join(matched_qualification_terms[:3])}")
@@ -1211,3 +1236,14 @@ class DiscoveryService:
         if deadline is None:
             return False
         return deadline <= datetime.utcnow() + timedelta(days=7)
+
+    def _is_empty_collection_result(self, message: str) -> bool:
+        normalized_message = message.strip().lower()
+        return any(
+            token in normalized_message
+            for token in (
+                "found no projects matching current targeting",
+                "returned no projects",
+                "returned no collectable projects",
+            )
+        )

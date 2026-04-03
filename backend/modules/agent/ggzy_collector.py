@@ -1,8 +1,10 @@
+import json
 import re
+import ssl
 import time
 from html import unescape
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from core.config import settings
@@ -11,16 +13,25 @@ from core.exceptions import BusinessException
 
 class GgzyCollector:
     BASE_URL = "https://www.ggzy.gov.cn/"
+    TRADE_LIST_API_URL = "https://www.ggzy.gov.cn/information/pubTradingInfo/getTradList"
     BUDGET_EXHAUSTED_MESSAGE = "collect budget exhausted"
     MIN_REQUEST_BUDGET_SECONDS = 2.0
     MIN_PROJECT_BUDGET_SECONDS = 10.0
-    LIST_ITEM_PATTERN = re.compile(
-        r"<li[^>]*>\s*"
+    MIN_BROAD_PROJECTS = 120
+    MIN_BROAD_BUDGET_SECONDS = 180.0
+    LIST_TIME_CODE = "03"
+    LIST_QUERY_GROUPS = (
+        {"classify": "01", "stage": "0101"},
+        {"classify": "02", "stage": "0201"},
+    )
+    MAX_LIST_PAGES_PER_QUERY = 6
+    LIST_BLOCK_PATTERN = re.compile(r"<li[^>]*>(?P<block>.*?)</li>", re.IGNORECASE | re.DOTALL)
+    LIST_LINK_PATTERN = re.compile(
         r'<a\s+href="(?P<href>/information/deal/html/a/[^"]+\.html)"[^>]*>'
-        r"(?P<title>(?:(?!</a>).)*)</a>\s*"
-        r"<span>(?P<published_at>\d{4}-\d{2}-\d{2})</span>",
+        r"(?P<title>.*?)</a>",
         re.IGNORECASE | re.DOTALL,
     )
+    LIST_DATE_PATTERN = re.compile(r"<span>(?P<published_at>\d{4}-\d{2}-\d{2})</span>")
     ACTUAL_DETAIL_PATTERNS = (
         re.compile(r"firstLastUrl\s*=\s*'(?P<url>/information/deal/html/b/[^']+\.html)'"),
         re.compile(r"showDetail\([^,]+,[^,]+,\s*'(?P<url>/information/deal/html/b/[^']+\.html)'\)"),
@@ -57,7 +68,8 @@ class GgzyCollector:
         "答疑",
         "资格预审结果",
     )
-    SUPPORTED_STAGE_CODES = {"0101", "0201"}
+    SUPPORTED_STAGE_CODES = {"0101", "0104", "0201", "0202", "9001"}
+    ANNOUNCEMENT_STAGE_CODES = {"0101", "0201"}
     REGION_BY_CODE = {
         "110000": "北京",
         "120000": "天津",
@@ -118,9 +130,10 @@ class GgzyCollector:
         }
 
     def collect(self) -> dict[str, Any]:
-        deadline = time.monotonic() + self.budget_seconds
-        list_html = self._fetch_text(self.list_url, referer=self.BASE_URL, deadline=deadline)
-        list_items = self._parse_list_items(list_html)
+        effective_budget_seconds = self._get_budget_seconds()
+        deadline = time.monotonic() + effective_budget_seconds
+        target_project_limit = self._get_project_limit()
+        list_items = self._load_list_items(deadline=deadline)
         candidate_items = self._prioritize_list_items(list_items)
         matched_projects: list[dict[str, Any]] = []
         fallback_projects: list[dict[str, Any]] = []
@@ -128,7 +141,7 @@ class GgzyCollector:
         incomplete_count = 0
         budget_exhausted = False
 
-        candidate_limit = self.max_projects * 3 if self._is_targeted_mode() else self.max_projects
+        candidate_limit = max(target_project_limit * 6, 20)
         for item in candidate_items[:candidate_limit]:
             if self._remaining_seconds(deadline) < self.MIN_PROJECT_BUDGET_SECONDS:
                 budget_exhausted = True
@@ -142,11 +155,11 @@ class GgzyCollector:
                     continue
                 if self._matches_targeting(project):
                     matched_projects.append(project)
-                    if len(matched_projects) >= self.max_projects:
+                    if len(matched_projects) >= target_project_limit:
                         break
                 else:
                     fallback_projects.append(project)
-                    if not self._is_targeted_mode() and len(fallback_projects) >= self.max_projects:
+                    if not self._is_targeted_mode() and len(fallback_projects) >= target_project_limit:
                         break
             except BusinessException as exc:
                 failures.append(f"{item['detail_url']}: {exc.message}")
@@ -155,9 +168,9 @@ class GgzyCollector:
                     break
 
         if self._is_targeted_mode():
-            projects = matched_projects[: self.max_projects]
+            projects = matched_projects[:target_project_limit]
         else:
-            projects = matched_projects[: self.max_projects] or fallback_projects[: self.max_projects]
+            projects = matched_projects[:target_project_limit] or fallback_projects[:target_project_limit]
         if not projects:
             detail = "; ".join(failures[:3]) if failures else "no supported notices found on list page"
             if self._is_targeted_mode():
@@ -173,7 +186,7 @@ class GgzyCollector:
                 "matched_project_count": len(matched_projects),
                 "incomplete_count": incomplete_count,
                 "failure_count": len(failures),
-                "budget_seconds": self.budget_seconds,
+                "budget_seconds": effective_budget_seconds,
                 "budget_exhausted": budget_exhausted,
                 "remaining_seconds": round(self._remaining_seconds(deadline), 2),
                 "targeting": self.targeting,
@@ -181,25 +194,95 @@ class GgzyCollector:
             },
         }
 
+    def _get_project_limit(self) -> int:
+        if self._is_targeted_mode():
+            return self.max_projects
+        return max(self.max_projects, self.MIN_BROAD_PROJECTS)
+
+    def _get_budget_seconds(self) -> float:
+        if self._is_targeted_mode():
+            return float(self.budget_seconds)
+        return max(float(self.budget_seconds), self.MIN_BROAD_BUDGET_SECONDS)
+
+    def _load_list_items(self, *, deadline: float) -> list[dict[str, str]]:
+        try:
+            api_items = self._fetch_list_items_from_api(deadline=deadline)
+            if api_items:
+                return api_items
+        except BusinessException:
+            pass
+
+        list_html = self._fetch_text(self.list_url, referer=self.BASE_URL, deadline=deadline)
+        return self._parse_list_items(list_html)
+
+    def _fetch_list_items_from_api(self, *, deadline: float) -> list[dict[str, str]]:
+        items: list[dict[str, str]] = []
+        seen_urls: set[str] = set()
+        for query in self.LIST_QUERY_GROUPS:
+            stage_code = query["stage"]
+            classify_code = query["classify"]
+            for page_number in range(1, self.MAX_LIST_PAGES_PER_QUERY + 1):
+                response = self._post_form_json(
+                    self.TRADE_LIST_API_URL,
+                    {
+                        "SOURCE_TYPE": "1",
+                        "DEAL_TIME": self.LIST_TIME_CODE,
+                        "PAGENUMBER": str(page_number),
+                        "DEAL_CLASSIFY": classify_code,
+                        "DEAL_STAGE": stage_code,
+                    },
+                    referer=(
+                        f"{self.BASE_URL}deal/dealList.html"
+                        f"?DEAL_CLASSIFY={classify_code}&DEAL_STAGE={stage_code}"
+                    ),
+                    deadline=deadline,
+                )
+                records = ((response.get("data") or {}).get("records") or [])
+                if not isinstance(records, list) or not records:
+                    break
+
+                for record in records:
+                    if not isinstance(record, dict):
+                        continue
+                    title = self._clean_text(record.get("title", ""))
+                    href = urljoin(self.BASE_URL, self._clean_text(record.get("url", "")))
+                    published_at = self._normalize_datetime(str(record.get("publishTime", "")).strip())
+                    record_stage_code = self._clean_text(record.get("informationType", "")) or self._extract_stage_code(
+                        href
+                    )
+                    if not title or not href or href in seen_urls:
+                        continue
+                    if record_stage_code and record_stage_code not in self.SUPPORTED_STAGE_CODES:
+                        continue
+                    if any(keyword in title for keyword in self.EXCLUDED_TITLE_KEYWORDS):
+                        continue
+                    seen_urls.add(href)
+                    items.append(
+                        {
+                            "title": title,
+                            "detail_url": href,
+                            "published_at": published_at,
+                            "stage_code": record_stage_code or stage_code,
+                        }
+                    )
+
+        return items
+
     def _collect_one(self, item: dict[str, str], *, deadline: float) -> dict[str, Any]:
         outer_url = item["detail_url"]
-        actual_url = self._derive_actual_detail_url(outer_url)
-
-        try:
+        list_stage_code = self._clean_text(item.get("stage_code", "")) or self._extract_stage_code(outer_url)
+        outer_html = self._fetch_text(outer_url, referer=self.list_url, deadline=deadline)
+        actual_url = self._extract_actual_detail_url(outer_html, outer_url)
+        actual_stage_code = self._extract_stage_code(actual_url)
+        stage_code = actual_stage_code or list_stage_code
+        if actual_url == outer_url:
+            detail_html = outer_html
+        else:
             detail_html = self._fetch_text(actual_url, referer=outer_url, deadline=deadline)
-        except BusinessException as exc:
-            if self._is_budget_exhausted_message(exc.message):
-                raise
-            outer_html = self._fetch_text(outer_url, referer=self.list_url, deadline=deadline)
-            actual_url = self._extract_actual_detail_url(outer_html, outer_url)
-            if actual_url == outer_url:
-                detail_html = outer_html
-            else:
-                detail_html = self._fetch_text(actual_url, referer=outer_url, deadline=deadline)
 
         title = self._extract_first(detail_html, self.TITLE_PATTERNS) or item["title"]
         title = self._clean_text(title)
-        if not self._is_supported_title(title):
+        if not self._is_supported_notice(title, stage_code):
             raise BusinessException("detail page is not a supported notice type")
 
         detail_text = self._truncate_detail_text(self._extract_detail_text(detail_html))
@@ -244,7 +327,7 @@ class GgzyCollector:
             )
         )
         qualification_requirements = self._extract_qualification_requirements(detail_text)
-        notice_type = self._infer_notice_type(title)
+        notice_type = self._infer_notice_type(title, stage_code=stage_code)
         source_notice_id = project_code or self._extract_notice_id(actual_url)
         keywords = self._build_keywords(
             [
@@ -283,10 +366,16 @@ class GgzyCollector:
         items: list[dict[str, str]] = []
         seen_urls: set[str] = set()
 
-        for match in self.LIST_ITEM_PATTERN.finditer(html_text):
-            title = self._clean_text(match.group("title"))
-            href = urljoin(self.BASE_URL, self._clean_text(match.group("href")))
-            published_at = self._normalize_datetime(match.group("published_at"))
+        for block_match in self.LIST_BLOCK_PATTERN.finditer(html_text):
+            block = block_match.group("block")
+            link_match = self.LIST_LINK_PATTERN.search(block)
+            date_match = self.LIST_DATE_PATTERN.search(block)
+            if not link_match or not date_match:
+                continue
+
+            title = self._clean_text(link_match.group("title"))
+            href = urljoin(self.BASE_URL, self._clean_text(link_match.group("href")))
+            published_at = self._normalize_datetime(date_match.group("published_at"))
             stage_code = self._extract_stage_code(href)
             if not href or href in seen_urls:
                 continue
@@ -351,17 +440,93 @@ class GgzyCollector:
                 raw_bytes = response.read()
                 charset = response.headers.get_content_charset() or "utf-8"
         except Exception as exc:
-            raise BusinessException(f"failed to fetch ggzy page: {url} ({exc})") from exc
+            ssl_reason = getattr(exc, "reason", exc)
+            if not isinstance(ssl_reason, ssl.SSLCertVerificationError):
+                raise BusinessException(f"failed to fetch ggzy page: {url} ({exc})") from exc
+            insecure_context = ssl._create_unverified_context()
+            try:
+                with urlopen(request, timeout=request_timeout, context=insecure_context) as response:
+                    raw_bytes = response.read()
+                    charset = response.headers.get_content_charset() or "utf-8"
+            except Exception as exc:
+                raise BusinessException(f"failed to fetch ggzy page: {url} ({exc})") from exc
 
         try:
             return raw_bytes.decode(charset, errors="replace")
         except LookupError:
             return raw_bytes.decode("utf-8", errors="replace")
 
+    def _post_form_json(
+        self,
+        url: str,
+        payload: dict[str, str],
+        *,
+        referer: str,
+        deadline: float | None = None,
+    ) -> dict[str, Any]:
+        request_timeout = float(self.timeout_seconds)
+        if deadline is not None:
+            remaining_seconds = self._remaining_seconds(deadline)
+            if remaining_seconds <= self.MIN_REQUEST_BUDGET_SECONDS:
+                raise BusinessException(self.BUDGET_EXHAUSTED_MESSAGE)
+            request_timeout = min(request_timeout, remaining_seconds)
+
+        request = Request(
+            url,
+            data=urlencode(payload).encode("utf-8"),
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/123.0.0.0 Safari/537.36"
+                ),
+                "Accept-Language": "zh-CN,zh;q=0.9",
+                "Referer": referer,
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+            method="POST",
+        )
+
+        try:
+            with urlopen(request, timeout=request_timeout) as response:
+                raw_text = response.read().decode("utf-8", errors="replace")
+        except Exception as exc:
+            ssl_reason = getattr(exc, "reason", exc)
+            if isinstance(ssl_reason, ssl.SSLCertVerificationError):
+                insecure_context = ssl._create_unverified_context()
+                try:
+                    with urlopen(request, timeout=request_timeout, context=insecure_context) as response:
+                        raw_text = response.read().decode("utf-8", errors="replace")
+                except Exception as retry_exc:
+                    raise BusinessException(
+                        f"failed to fetch ggzy list api: {url} ({retry_exc})"
+                    ) from retry_exc
+            else:
+                raise BusinessException(f"failed to fetch ggzy list api: {url} ({exc})") from exc
+
+        try:
+            payload = json.loads(raw_text)
+        except json.JSONDecodeError as exc:
+            raise BusinessException("ggzy list api returned invalid json") from exc
+        if not isinstance(payload, dict):
+            raise BusinessException("ggzy list api returned unexpected payload")
+        return payload
+
     def _derive_actual_detail_url(self, outer_url: str) -> str:
         return outer_url.replace("/html/a/", "/html/b/")
 
     def _extract_actual_detail_url(self, outer_html: str, outer_url: str) -> str:
+        candidate_urls = re.findall(
+            r"/information/deal/html/b/[^\"']+\.html",
+            outer_html,
+            flags=re.IGNORECASE,
+        )
+        for candidate_url in candidate_urls:
+            if "/0101/" in candidate_url or "/0201/" in candidate_url:
+                return urljoin(self.BASE_URL, candidate_url)
+        if candidate_urls:
+            return urljoin(self.BASE_URL, candidate_urls[0])
         for pattern in self.ACTUAL_DETAIL_PATTERNS:
             match = pattern.search(outer_html)
             if match:
@@ -440,7 +605,11 @@ class GgzyCollector:
 
         return requirements[:4]
 
-    def _infer_notice_type(self, title: str) -> str:
+    def _infer_notice_type(self, title: str, *, stage_code: str = "") -> str:
+        if stage_code == "0101":
+            return "招标公告"
+        if stage_code == "0201":
+            return "采购公告"
         if "公开招标" in title:
             return "公开招标公告"
         if "采购公告" in title:
@@ -521,6 +690,11 @@ class GgzyCollector:
             return False
         return any(keyword in cleaned for keyword in self.ALLOWED_TITLE_KEYWORDS)
 
+    def _is_supported_notice(self, title: str, stage_code: str) -> bool:
+        if stage_code in self.ANNOUNCEMENT_STAGE_CODES:
+            return True
+        return self._is_supported_title(title)
+
     def _is_complete_project(self, project: dict[str, Any]) -> bool:
         required_fields = (
             "source_notice_id",
@@ -537,13 +711,13 @@ class GgzyCollector:
 
         optional_hits = sum(
             1
-            for field in ("project_code", "tender_unit", "budget_text", "deadline_text")
+            for field in ("project_code", "tender_unit", "budget_text", "deadline_text", "original_url")
             if self._clean_text(project.get(field, ""))
         )
         qualification_requirements = project.get("qualification_requirements")
         if isinstance(qualification_requirements, list) and qualification_requirements:
             optional_hits += 1
-        return optional_hits >= 2
+        return optional_hits >= 1
 
     def _matches_targeting(self, project: dict[str, Any]) -> bool:
         if not self._is_targeted_mode():
@@ -563,8 +737,6 @@ class GgzyCollector:
 
     def _score_targeting_text(self, text: str) -> int:
         if not self._is_targeted_mode():
-            return 0
-        if self.targeting["regions"] and not any(term in text for term in self.targeting["regions"]):
             return 0
         score = 0
         for term in self.targeting["keywords"]:

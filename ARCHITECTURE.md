@@ -133,7 +133,7 @@ Backend API (FastAPI)
 - `txt / docx` 会先解析为结构块，再进行规则切块
 - `docx` 解析已支持段落、标题、列表、表格顺序读取
 - 已支持段内编号标题识别与长段再切分
-- `company_profile` 已增加规则版重点句提取
+- 5 类资料均已支持规则版重点内容提取：`company_profile / business_info / qualifications / templates / project_cases`
 - `process` 接口当前会返回：
   - `parse_summary`
   - `warnings`
@@ -190,9 +190,12 @@ Backend API (FastAPI)
 
 - 新增 `/api/discovery/profile`，返回当前企业能力画像和推荐方向
 - `POST /api/discovery/runs` 已支持 `mode / profile_key / keywords / regions / qualification_terms / industry_terms`
+- `collect_agent` 优先通过本地 OpenClaw Gateway 执行，失败时回退到本地 `ggzy collector`
+- 广泛采集当前直接接入全国公共资源交易平台“交易公开”公开列表接口，按 `0101 / 0201` 公告池多页抓取，单次默认可落库 120 条线索
+- 定向匹配中的地区当前作为加分项保留，不再作为硬过滤条件
 - discovery 列表排序规则已调整为：
-  1. `targeting_match_score desc`
-  2. `recommendation_score desc`
+  1. `recommendation_score desc`
+  2. `targeting_match_score desc`
   3. `published_at desc`
 - 定向采集参数会写入：
   - `project_discovery_runs.targeting_snapshot`

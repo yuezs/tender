@@ -34,17 +34,17 @@
   - 检索调试
   - 文档操作下拉菜单（处理 / 全文查看 / 文件下载 / 删除）
   - 检索结果三行预览 + 弹窗全文查看
-- 当前只支持 4 类资料：
-  - `company_profile`
-  - `qualifications`
-  - `project_cases`
-  - `templates`
-- 当前知识文档仅支持 `txt / docx`（`pdf` 未纳入知识库范围）
+- 当前资料分类共 5 类：
+  - `company_profile`：公司介绍
+  - `business_info`：商务信息
+  - `qualifications`：资质证书
+  - `templates`：技术方案
+  - `project_cases`：项目案例
 - 当前解析能力：
   - `txt / docx` 统一解析为结构块
   - `docx` 支持段落、标题、列表、表格顺序读取
   - 支持段内编号标题识别与长段再切分
-  - `company_profile` 已增加规则版重点句提取
+  - 5 类资料均已支持规则版重点内容提取
 - 处理结果会返回：
   - `parse_summary`
   - `warnings`
@@ -59,18 +59,27 @@
   - industry 过滤
   - `LIKE` 关键词匹配
 
-### 3. Agent 链路
+### 3. 项目发现工作台
 
-- 当前只保留 4 个 Agent：
+- 支持 `ggzy` 单站广泛采集与按推荐方向采集
+- 广泛采集当前接入全国公共资源交易平台“交易公开”公开列表接口
+- 当前单次广泛采集默认可返回 120 条项目线索
+- 项目线索池默认按 `recommendation_score` 降序展示
+
+### 4. Agent 链路
+
+- 当前只保留 5 个 Agent：
+  - `collect_agent`
   - `extract_agent`
   - `judge_agent`
   - `generate_agent`
   - `orchestrator`
+- `collect_agent` 仅用于项目发现，不下载附件，不进入写标书主链路
 - Agent 不直接访问数据库
 - 由 backend orchestrator 先检索知识，再组装上下文喂给 Agent
-- 当前仍使用 mock / 规则版输出，但流程是真实链路
+- 项目发现链路当前已接入真实 `ggzy` 采集，其余 Agent 仍按本地 OpenClaw / 模型配置或规则兜底运行
 
-### 4. 前端工作台
+### 5. 前端工作台
 
 - 前端使用 `Next.js + TypeScript`
 - 样式层已切到 `Tailwind CSS`
@@ -88,7 +97,7 @@
 - Database: MySQL
 - ORM: SQLAlchemy
 - File Storage: 本地 `storage/`
-- Agent orchestration: OpenClaw 预留，当前用 mock/规则版链路
+- Agent orchestration: OpenClaw Gateway + 本地规则兜底
 
 ## 目录结构
 
@@ -157,8 +166,7 @@ npm run dev
 
 ## 当前边界
 
-- 未接入真实 OpenClaw / LLM
-- `extract / judge / generate` 仍是 mock / 规则版
+- `extract / judge / generate` 是否走真实 LLM 仍取决于本地 OpenClaw 与模型配置
 - 未实现 PDF 真实解析
 - 未实现复杂权限、审批流、向量检索、RAG、rerank
 - 知识库前端已实现基础管理页（上传 / 列表 / 处理 / 检索调试 / 全文查看 / 下载 / 删除），未实现编辑、向量检索、复杂排序与权限能力
