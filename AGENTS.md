@@ -187,3 +187,19 @@
 - 不要一次完成过大范围功能
 - 不要生成超大文件
 - 不要把未来架构复杂化
+
+---
+
+## Tender Processing Current Additions
+The tender results workspace currently supports the following implemented behavior:
+- The `generate` step outputs proposal outline first, rather than only a one-shot long draft body.
+- Users can generate body content section by section from the outline.
+- Users can review chapter-level and section-level body content in modals.
+- The page displays overall proposal progress and chapter progress.
+- The page supports outline download and full Word export.
+- The parse text preview is truncated to 10 lines by default and can be opened in a full-text modal.
+
+Constraints:
+- Full Word export is assembled from generated section content.
+- The current phase still does not include complex rich-text editing, collaborative editing, or high-fidelity layout round-trip.
+

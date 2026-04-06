@@ -48,6 +48,8 @@ export default function TenderPage() {
     [steps]
   );
   const currentBannerTone = hasError ? "danger" : latestResult ? "success" : selectedFile ? "accent" : "default";
+  const latestFileId = latestResult?.upload.file_id || uploadedFileId;
+  const resultsHref = latestFileId ? `/results?file_id=${latestFileId}` : "/results";
 
   function updateStep(step: StepKey, nextState: StepState) {
     setSteps((current) => ({
@@ -192,7 +194,7 @@ export default function TenderPage() {
         description="围绕单个招标文件完成上传、解析、字段抽取、投标判断与标书初稿生成。当前重点是让动作反馈、流程状态和最近结果都足够清晰。"
         actions={
           <>
-            <Link className="ui-button-secondary" href="/results">
+            <Link className="ui-button-secondary" href={resultsHref}>
               查看结果页
             </Link>
             <button className="ui-button-primary" type="button" onClick={handleRunPipeline} disabled={!canRun}>
@@ -243,7 +245,7 @@ export default function TenderPage() {
                 <button className="ui-button-secondary" type="button" onClick={handleUploadOnly} disabled={!canRun}>
                   仅上传
                 </button>
-                <Link className="ui-button-ghost" href="/results">
+                <Link className="ui-button-ghost" href={resultsHref}>
                   查看结果
                 </Link>
               </div>

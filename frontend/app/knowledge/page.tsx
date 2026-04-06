@@ -3,6 +3,7 @@
 import { ChangeEvent, CSSProperties, MouseEvent, useEffect, useMemo, useState } from "react";
 
 import AppShell from "@/components/app-shell";
+import AppModal from "@/components/ui/app-modal";
 import MetricCard from "@/components/ui/metric-card";
 import PanelCard from "@/components/ui/panel-card";
 import {
@@ -916,121 +917,54 @@ export default function KnowledgePage() {
         </div>
       </div>
 
-      {viewingDocument ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6"
-          onClick={() => setViewingDocument(null)}
-        >
-          <div
-            className="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-line bg-white shadow-panel"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
-              <div className="space-y-2">
-                <p className="ui-field-label">全文查看</p>
-                <h2 className="text-lg font-semibold text-ink">{viewingDocument.title}</h2>
-                <p className="text-sm text-subtle">
-                  {categoryLabelMap[viewingDocument.category]} · {getStatusLabel(viewingDocument.status)} ·{" "}
-                  {getContentSourceLabel(viewingDocument.source)}
-                </p>
-              </div>
-              <button className="ui-button-secondary" type="button" onClick={() => setViewingDocument(null)}>
-                关闭
-              </button>
-            </div>
+      <AppModal
+        open={Boolean(viewingDocument)}
+        onClose={() => setViewingDocument(null)}
+        eyebrow="全文查看"
+        title={viewingDocument?.title ?? ""}
+        description={
+          viewingDocument
+            ? `${categoryLabelMap[viewingDocument.category]} · ${getStatusLabel(viewingDocument.status)} · ${getContentSourceLabel(viewingDocument.source)}`
+            : ""
+        }
+        maxWidthClassName="max-w-5xl"
+      >
+        <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-muted">{viewingDocument?.content ?? ""}</pre>
+      </AppModal>
 
-            <div className="overflow-y-auto px-5 py-4">
-              <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-muted">
-                {viewingDocument.content}
-              </pre>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <AppModal
+        open={Boolean(selectedRetrievedChunk)}
+        onClose={() => setSelectedRetrievedChunk(null)}
+        eyebrow="检索结果全文"
+        title={selectedRetrievedChunk?.document_title ?? ""}
+        description={selectedRetrievedChunk?.section_title ?? ""}
+        maxWidthClassName="max-w-4xl"
+      >
+        <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-muted">{selectedRetrievedChunk?.content ?? ""}</pre>
+      </AppModal>
 
-      {selectedRetrievedChunk ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6"
-          onClick={() => setSelectedRetrievedChunk(null)}
-        >
-          <div
-            className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-line bg-white shadow-panel"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
-              <div className="space-y-2">
-                <p className="ui-field-label">检索结果全文</p>
-                <h2 className="text-lg font-semibold text-ink">{selectedRetrievedChunk.document_title}</h2>
-                <p className="text-sm text-subtle">{selectedRetrievedChunk.section_title}</p>
-              </div>
-              <button className="ui-button-secondary" type="button" onClick={() => setSelectedRetrievedChunk(null)}>
-                关闭
-              </button>
-            </div>
+      <AppModal
+        open={Boolean(selectedKeyPoint)}
+        onClose={() => setSelectedKeyPoint(null)}
+        eyebrow="重点内容全文"
+        title="重点内容"
+        maxWidthClassName="max-w-3xl"
+      >
+        <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-muted">{selectedKeyPoint ?? ""}</pre>
+      </AppModal>
 
-            <div className="overflow-y-auto px-5 py-4">
-              <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-muted">
-                {selectedRetrievedChunk.content}
-              </pre>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {selectedKeyPoint ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6"
-          onClick={() => setSelectedKeyPoint(null)}
-        >
-          <div
-            className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-line bg-white shadow-panel"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
-              <div className="space-y-2">
-                <p className="ui-field-label">重点内容全文</p>
-                <h2 className="text-lg font-semibold text-ink">重点内容</h2>
-              </div>
-              <button className="ui-button-secondary" type="button" onClick={() => setSelectedKeyPoint(null)}>
-                关闭
-              </button>
-            </div>
-
-            <div className="overflow-y-auto px-5 py-4">
-              <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-muted">{selectedKeyPoint}</pre>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {selectedChunkPreviewItem ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6"
-          onClick={() => setSelectedChunkPreviewItem(null)}
-        >
-          <div
-            className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-line bg-white shadow-panel"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
-              <div className="space-y-2">
-                <p className="ui-field-label">切块预览全文</p>
-                <h2 className="text-lg font-semibold text-ink">{selectedChunkPreviewItem.section_title}</h2>
-                <p className="text-sm text-subtle">{selectedChunkPreviewItem.char_count} 字符</p>
-              </div>
-              <button className="ui-button-secondary" type="button" onClick={() => setSelectedChunkPreviewItem(null)}>
-                关闭
-              </button>
-            </div>
-
-            <div className="overflow-y-auto px-5 py-4">
-              <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-muted">
-                {selectedChunkPreviewItem.content_preview}
-              </pre>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <AppModal
+        open={Boolean(selectedChunkPreviewItem)}
+        onClose={() => setSelectedChunkPreviewItem(null)}
+        eyebrow="切块预览全文"
+        title={selectedChunkPreviewItem?.section_title ?? ""}
+        description={selectedChunkPreviewItem ? `${selectedChunkPreviewItem.char_count} 字符` : ""}
+        maxWidthClassName="max-w-4xl"
+      >
+        <pre className="whitespace-pre-wrap break-words text-sm leading-7 text-muted">
+          {selectedChunkPreviewItem?.content_preview ?? ""}
+        </pre>
+      </AppModal>
     </AppShell>
   );
 }

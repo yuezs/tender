@@ -1,8 +1,8 @@
 from core.config import settings
 from core.exceptions import BusinessException
 from modules.agent.openclaw_client import OpenClawClient
-from modules.agent.output_parser import ensure_generate_result
-from modules.agent.prompt_templates import build_generate_prompt
+from modules.agent.output_parser import ensure_generate_result, ensure_generate_section_result
+from modules.agent.prompt_templates import build_generate_prompt, build_generate_section_prompt
 
 
 class GenerateAgent:
@@ -11,6 +11,22 @@ class GenerateAgent:
 
     def build_prompt(self, tender_fields: dict, judge_result: dict, knowledge_context: dict) -> str:
         return build_generate_prompt(tender_fields, judge_result, knowledge_context)
+
+    def build_section_prompt(
+        self,
+        tender_fields: dict,
+        judge_result: dict,
+        knowledge_context: dict,
+        parent_section: dict,
+        child_section: dict,
+    ) -> str:
+        return build_generate_section_prompt(
+            tender_fields,
+            judge_result,
+            knowledge_context,
+            parent_section,
+            child_section,
+        )
 
     def run(
         self,
@@ -31,7 +47,46 @@ class GenerateAgent:
         llm_response = self._run_llm(prompt=prompt, execution_context=execution_context)
         raw_result = self.client.parse_json_object(llm_response["text"])
         return {
-            "result": ensure_generate_result(raw_result, knowledge_context, prompt),
+            "result": ensure_generate_result(
+                raw_result,
+                tender_fields,
+                judge_result,
+                knowledge_context,
+                prompt,
+            ),
+            "debug": llm_response["debug"],
+            "prompt": prompt,
+            "raw_text": llm_response["text"],
+        }
+
+    def run_section(
+        self,
+        tender_fields: dict,
+        judge_result: dict,
+        knowledge_context: dict,
+        parent_section: dict,
+        child_section: dict,
+        *,
+        execution_context: dict | None = None,
+        prompt: str | None = None,
+    ) -> dict:
+        prompt = prompt or self.build_section_prompt(
+            tender_fields,
+            judge_result,
+            knowledge_context,
+            parent_section,
+            child_section,
+        )
+        execution_context = execution_context or {}
+        if not settings.agent_use_real_llm:
+            raise BusinessException(
+                "Tender generate requires real OpenClaw. Set AGENT_USE_REAL_LLM=true and restart backend."
+            )
+
+        llm_response = self._run_llm(prompt=prompt, execution_context=execution_context)
+        raw_result = self.client.parse_json_object(llm_response["text"])
+        return {
+            "result": ensure_generate_section_result(raw_result, knowledge_context, prompt),
             "debug": llm_response["debug"],
             "prompt": prompt,
             "raw_text": llm_response["text"],
