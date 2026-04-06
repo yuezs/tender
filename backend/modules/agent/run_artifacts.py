@@ -8,6 +8,7 @@ from core.config import settings
 
 class AgentRunArtifactService:
     STEPS = {"extract", "judge", "generate"}
+    SECTION_STEP_PREFIX = "generate-section-"
 
     def __init__(self) -> None:
         self.root_dir = settings.storage_root / "tender" / "agent_runs"
@@ -60,11 +61,14 @@ class AgentRunArtifactService:
 
     def _get_step_dir(self, file_id: str, step: str) -> Path:
         normalized_step = step.strip().lower()
-        if normalized_step not in self.STEPS:
+        if not self._is_supported_step(normalized_step):
             raise ValueError(f"Unsupported agent step: {step}")
         step_dir = self.root_dir / file_id / normalized_step
         step_dir.mkdir(parents=True, exist_ok=True)
         return step_dir
+
+    def _is_supported_step(self, step: str) -> bool:
+        return step in self.STEPS or step.startswith(self.SECTION_STEP_PREFIX)
 
     def _read_json(self, path: Path) -> dict[str, Any]:
         if not path.exists():

@@ -171,3 +171,15 @@
 - 页面能清晰展示流程状态与结果
 - 用户能够在资料中心完成：上传 -> 处理 -> 查看解析摘要/重点内容 -> 检索 -> 全文查看/下载/删除
 - 文档、接口和当前实现保持一致
+
+## Tender Review Page Updates (2026-04-03)
+
+The tender review workspace is now aligned with a directory-first generation flow:
+
+- The `generate` step now prioritizes proposal outline generation (`proposal_outline`) instead of only returning a long draft body.
+- The results page supports section-by-section body generation and continuing generation for remaining sections.
+- Users can click a child section to view section body content in a modal, and click a chapter to view the aggregated chapter content in a modal.
+- The page now shows proposal-level progress, chapter-level progress, and section status (`pending / loading / success / error`).
+- The current workflow supports both outline download and full Word export; the full Word file is assembled from generated section content.
+- The parse text preview is now truncated to 10 lines by default and can be opened in a full-text modal.
+

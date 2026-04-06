@@ -400,3 +400,38 @@ orchestrator 负责：
 - 审批流
 
 原则是：简单优先、可运行优先、小步迭代。
+
+## Tender Review And Section Generation Additions (2026-04-03)
+
+The current tender results workflow is now directory-driven rather than a single-pass long draft workflow.
+
+### 1. Results page responsibilities
+
+- `/results` now renders `proposal_outline` as the primary review object.
+- The page is responsible for displaying:
+  - overall proposal progress
+  - chapter progress
+  - section generation status
+  - modal-based section and chapter content review
+  - full Word export entry
+
+### 2. Additional backend endpoints
+
+The tender module currently includes these result-review endpoints in addition to the original main-chain endpoints:
+
+- `GET /api/tender/results/latest`
+- `GET /api/tender/results/{file_id}`
+- `GET /api/tender/sections/{file_id}/{section_id}`
+- `POST /api/tender/generate/section`
+- `POST /api/tender/documents/fulltext`
+- `GET /api/tender/documents/{document_id}/download`
+
+### 3. Data shape additions
+
+- The `generate` result now includes:
+  - `proposal_outline`
+  - `section_contents`
+  - `document_id / document_file_name / download_url`
+- Generated section bodies are written back into the tender record and reused by the results page, section modals, and full-document export.
+- Full Word export currently assembles from generated section content only; it does not attempt complex automatic completion for unfinished sections.
+

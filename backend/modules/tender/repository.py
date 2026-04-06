@@ -30,6 +30,12 @@ class TenderRepository:
         record = json.loads(path.read_text(encoding="utf-8"))
         return self._ensure_default_fields(record)
 
+    def get_latest_record(self) -> dict:
+        records = self.list_records(limit=1)
+        if not records:
+            raise BusinessException("暂无可用的招标处理结果。", status_code=404)
+        return records[0]
+
     def update_record(self, file_id: str, updates: dict) -> dict:
         record = self.get_record(file_id)
         record.update(updates)
@@ -46,16 +52,45 @@ class TenderRepository:
         for path in sorted(self.records_dir.glob("*.json")):
             record = json.loads(path.read_text(encoding="utf-8"))
             generate_document = record.get("generate_document") or {}
-            if str(generate_document.get("document_id", "")).strip() == target_id:
+            fulltext_document = record.get("fulltext_document") or {}
+            if (
+                str(generate_document.get("document_id", "")).strip() == target_id
+                or str(fulltext_document.get("document_id", "")).strip() == target_id
+            ):
                 return self._ensure_default_fields(record)
 
         raise BusinessException("未找到对应的标书文档，请重新生成。", status_code=404)
+
+    def list_records(self, limit: int | None = None) -> list[dict]:
+        records: list[dict] = []
+        for path in sorted(self.records_dir.glob("*.json")):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(payload, dict):
+                records.append(self._ensure_default_fields(payload))
+
+        records.sort(
+            key=lambda item: (
+                str(item.get("updated_at", "")),
+                str(item.get("created_at", "")),
+            ),
+            reverse=True,
+        )
+        if limit is None:
+            return records
+        return records[:limit]
 
     def _ensure_default_fields(self, record: dict) -> dict:
         agent_artifacts = deepcopy(record.get("agent_artifacts") or {})
         for step in ("extract", "judge", "generate"):
             agent_artifacts.setdefault(step, {})
         record["agent_artifacts"] = agent_artifacts
+        for field in ("parse_error", "extract_error", "judge_error", "generate_error", "text_preview"):
+            record.setdefault(field, "")
+        record.setdefault("generate_document", {})
+        record.setdefault("fulltext_document", {})
         return record
 
     def _get_record_path(self, file_id: str) -> Path:
