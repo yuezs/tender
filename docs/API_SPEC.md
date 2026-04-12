@@ -50,10 +50,11 @@
 
 ## 项目发现模块
 
-当前只支持 `ggzy` 单站项目发现，但已支持两种模式：
+当前只支持 `ggzy` 单站项目发现，但已支持三种模式：
 
 - `broad`：广泛采集
 - `targeted`：基于企业能力画像的定向采集
+- `keyword`：基于用户输入关键词的主动采集
 
 ### GET /api/discovery/status
 
@@ -141,27 +142,31 @@
 
 用途：
 - 触发一次手动项目采集。
-- 支持广泛采集和定向采集。
-- 定向采集参数会作为采集意图透传给真实 OpenClaw `collect_agent`。
+- 支持广泛采集、定向采集和关键词采集。
+- 定向/关键词采集参数会作为采集意图透传给真实 OpenClaw `collect_agent`。
 
 请求体：
 
 ```json
 {
   "source": "ggzy",
-  "mode": "targeted",
-  "profile_key": "qualification-track",
-  "profile_title": "资质能力导向项目",
-  "keywords": ["污水处理", "环保工程"],
-  "regions": ["陕西"],
-  "qualification_terms": ["ISO9001", "环保工程专业承包"],
-  "industry_terms": ["污水处理"]
+  "mode": "keyword",
+  "profile_key": "",
+  "profile_title": "",
+  "keywords": ["智慧园区", "弱电集成"],
+  "regions": ["甘肃"],
+  "notice_types": ["招标公告"],
+  "exclude_keywords": ["监理"],
+  "qualification_terms": [],
+  "industry_terms": []
 }
 ```
 
 说明：
 - 若 `mode=broad`，其余 targeting 字段可为空。
 - 若 `mode=targeted` 但未提供有效 targeting 词，后端会自动回退为 `broad`。
+- 若 `mode=keyword` 且 `keywords` 为空，接口直接返回错误。
+- `notice_types` 和 `exclude_keywords` 当前只作为 discovery 采集与推荐评分条件，不改变既有路由语义。
 - 定向模式不再静默回退到广泛采集结果；未命中当前方向时接口会直接返回错误。
 
 返回示例：
@@ -182,13 +187,15 @@
     "total_updated": 2,
     "error_message": "",
     "targeting": {
-      "mode": "targeted",
-      "profile_key": "qualification-track",
-      "profile_title": "资质能力导向项目",
-      "keywords": ["污水处理", "环保工程"],
-      "regions": ["陕西"],
-      "qualification_terms": ["ISO9001", "环保工程专业承包"],
-      "industry_terms": ["污水处理"]
+      "mode": "keyword",
+      "profile_key": "",
+      "profile_title": "",
+      "keywords": ["智慧园区", "弱电集成"],
+      "regions": ["甘肃"],
+      "notice_types": ["招标公告"],
+      "exclude_keywords": ["监理"],
+      "qualification_terms": [],
+      "industry_terms": []
     }
   }
 }
@@ -219,13 +226,15 @@
         "total_updated": 2,
         "error_message": "",
         "targeting": {
-          "mode": "targeted",
-          "profile_key": "qualification-track",
-          "profile_title": "资质能力导向项目",
-          "keywords": ["污水处理", "环保工程"],
-          "regions": ["陕西"],
-          "qualification_terms": ["ISO9001", "环保工程专业承包"],
-          "industry_terms": ["污水处理"]
+          "mode": "keyword",
+          "profile_key": "",
+          "profile_title": "",
+          "keywords": ["智慧园区", "弱电集成"],
+          "regions": ["甘肃"],
+          "notice_types": ["招标公告"],
+          "exclude_keywords": ["监理"],
+          "qualification_terms": [],
+          "industry_terms": []
         }
       }
     ]
@@ -272,10 +281,12 @@
         "recommendation_score": 70,
         "recommendation_level": "medium",
         "targeting_match_score": 52,
-        "profile_key": "qualification-track",
-        "profile_title": "资质能力导向项目",
+        "profile_key": "",
+        "profile_title": "关键词采集",
+        "matched_keywords": ["智慧园区"],
         "recommendation_reasons": [
-          "命中企业资质材料，可支撑资格匹配说明。"
+          "命中关键词：智慧园区",
+          "命中公告类型：招标公告"
         ]
       }
     ],
@@ -366,6 +377,10 @@
   }
 }
 ```
+
+补充说明：
+- `matched_keywords` 用于前端在列表中展示当前线索命中了哪些关键词输入。
+- `profile_title` 在 `mode=keyword` 时固定展示为 `关键词采集`，不依赖企业画像。
 
 ## 招标处理主链路
 

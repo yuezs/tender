@@ -107,6 +107,11 @@ class GgzyCollector:
             "profile_title": str(targeting.get("profile_title", "")).strip(),
             "keywords": self._normalize_targeting_terms(targeting.get("keywords"), limit=6),
             "regions": self._normalize_targeting_terms(targeting.get("regions"), limit=4),
+            "notice_types": self._normalize_targeting_terms(targeting.get("notice_types"), limit=4),
+            "exclude_keywords": self._normalize_targeting_terms(
+                targeting.get("exclude_keywords"),
+                limit=6,
+            ),
             "qualification_terms": self._normalize_targeting_terms(
                 targeting.get("qualification_terms"),
                 limit=5,
@@ -128,7 +133,7 @@ class GgzyCollector:
         incomplete_count = 0
         budget_exhausted = False
 
-        candidate_limit = self.max_projects * 3 if self._is_targeted_mode() else self.max_projects
+        candidate_limit = self.max_projects * 3 if self._uses_targeting() else self.max_projects
         for item in candidate_items[:candidate_limit]:
             if self._remaining_seconds(deadline) < self.MIN_PROJECT_BUDGET_SECONDS:
                 budget_exhausted = True
@@ -146,7 +151,7 @@ class GgzyCollector:
                         break
                 else:
                     fallback_projects.append(project)
-                    if not self._is_targeted_mode() and len(fallback_projects) >= self.max_projects:
+                    if not self._uses_targeting() and len(fallback_projects) >= self.max_projects:
                         break
             except BusinessException as exc:
                 failures.append(f"{item['detail_url']}: {exc.message}")
@@ -154,7 +159,7 @@ class GgzyCollector:
                     budget_exhausted = True
                     break
 
-        if self._is_targeted_mode():
+        if self._uses_targeting():
             projects = matched_projects[: self.max_projects]
         else:
             projects = matched_projects[: self.max_projects] or fallback_projects[: self.max_projects]
@@ -318,7 +323,7 @@ class GgzyCollector:
         return items
 
     def _prioritize_list_items(self, items: list[dict[str, str]]) -> list[dict[str, str]]:
-        if not self._is_targeted_mode():
+        if not self._uses_targeting():
             return items
 
         scored_items: list[tuple[int, dict[str, str]]] = []
@@ -547,11 +552,12 @@ class GgzyCollector:
         return not any(not self._clean_text(project.get(field, "")) for field in required_fields)
 
     def _matches_targeting(self, project: dict[str, Any]) -> bool:
-        if not self._is_targeted_mode():
+        if not self._uses_targeting():
             return False
         text = " ".join(
             [
                 str(project.get("title", "")),
+                str(project.get("notice_type", "")),
                 str(project.get("region", "")),
                 str(project.get("project_code", "")),
                 str(project.get("tender_unit", "")),
@@ -563,9 +569,15 @@ class GgzyCollector:
         return self._score_targeting_text(text) > 0
 
     def _score_targeting_text(self, text: str) -> int:
-        if not self._is_targeted_mode():
+        if not self._uses_targeting():
             return 0
+        if any(term in text for term in self.targeting["exclude_keywords"]):
+            return -100
         if self.targeting["regions"] and not any(term in text for term in self.targeting["regions"]):
+            return 0
+        if self.targeting["notice_types"] and not any(
+            term in text for term in self.targeting["notice_types"]
+        ):
             return 0
         score = 0
         for term in self.targeting["keywords"]:
@@ -578,6 +590,9 @@ class GgzyCollector:
             if term in text:
                 score += 3
         for term in self.targeting["industry_terms"]:
+            if term in text:
+                score += 2
+        for term in self.targeting["notice_types"]:
             if term in text:
                 score += 2
         return score
@@ -593,12 +608,18 @@ class GgzyCollector:
                 break
         return normalized
 
-    def _is_targeted_mode(self) -> bool:
-        if self.targeting.get("mode") != "targeted":
+    def _uses_targeting(self) -> bool:
+        if self.targeting.get("mode") not in {"targeted", "keyword"}:
             return False
         return any(
             self.targeting[key]
-            for key in ("keywords", "regions", "qualification_terms", "industry_terms")
+            for key in (
+                "keywords",
+                "regions",
+                "notice_types",
+                "qualification_terms",
+                "industry_terms",
+            )
         )
 
     def _remaining_seconds(self, deadline: float) -> float:

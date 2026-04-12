@@ -1,9 +1,11 @@
 export type DiscoveryRunTargeting = {
-  mode: "targeted" | "broad";
+  mode: "targeted" | "broad" | "keyword";
   profile_key: string;
   profile_title: string;
   keywords: string[];
   regions: string[];
+  notice_types: string[];
+  exclude_keywords: string[];
   qualification_terms: string[];
   industry_terms: string[];
 };
@@ -106,6 +108,7 @@ export type DiscoveryProject = {
   targeting_match_score: number;
   profile_key: string;
   profile_title: string;
+  matched_keywords: string[];
   recommendation_reasons: string[];
 };
 

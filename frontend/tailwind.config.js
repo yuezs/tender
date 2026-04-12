@@ -10,41 +10,44 @@ module.exports = {
     extend: {
       colors: {
         canvas: "#f3f5f8",
-        sidebar: "#eef1f5",
+        sidebar: "#eef2f6",
         panel: "#ffffff",
-        surface: "#f8fafc",
+        surface: "#f7f9fc",
+        inset: "#f1f4f8",
         line: {
-          DEFAULT: "#d7dde7",
-          strong: "#c3ccd8"
+          DEFAULT: "#d9e1ea",
+          strong: "#bfcadb"
         },
-        ink: "#152033",
-        muted: "#5f6c82",
-        subtle: "#7f8a9c",
+        ink: "#17202d",
+        muted: "#526173",
+        subtle: "#738296",
         accent: {
-          DEFAULT: "#365a82",
-          strong: "#27486d",
-          soft: "#e8eef5"
+          DEFAULT: "#355f91",
+          strong: "#284d78",
+          soft: "#edf4fb"
         },
         success: {
-          DEFAULT: "#0f766e",
-          soft: "#e7f8f4"
+          DEFAULT: "#16745f",
+          soft: "#edf8f3"
         },
         warning: {
-          DEFAULT: "#a16207",
-          soft: "#fff5df"
+          DEFAULT: "#9c5f12",
+          soft: "#fff6e8"
         },
         danger: {
           DEFAULT: "#b42318",
-          soft: "#fcebea"
+          soft: "#fcedec"
         }
       },
       borderRadius: {
-        xl: "1rem",
-        "2xl": "1.25rem",
-        "3xl": "1.5rem"
+        xl: "0.375rem",
+        "2xl": "0.5rem",
+        "3xl": "0.5rem"
       },
       boxShadow: {
-        panel: "0 1px 2px rgba(15, 23, 42, 0.04), 0 12px 24px rgba(15, 23, 42, 0.06)"
+        panel: "0 1px 2px rgba(15, 23, 42, 0.03), 0 10px 24px rgba(15, 23, 42, 0.03)",
+        float: "0 18px 40px rgba(15, 23, 42, 0.10), 0 4px 12px rgba(15, 23, 42, 0.06)",
+        inset: "inset 0 1px 0 rgba(255, 255, 255, 0.8)"
       },
       fontFamily: {
         sans: ["Aptos", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "sans-serif"]

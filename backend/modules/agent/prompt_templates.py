@@ -40,11 +40,13 @@ def build_collect_prompt(source: str, targeting: dict | None = None) -> str:
         "profile_title": "",
         "keywords": [],
         "regions": [],
+        "notice_types": [],
+        "exclude_keywords": [],
         "qualification_terms": [],
         "industry_terms": [],
     }
     command = "python scripts/collect_ggzy.py"
-    if targeting.get("mode") == "targeted":
+    if targeting.get("mode") in {"targeted", "keyword"}:
         targeting_payload = base64.urlsafe_b64encode(
             json.dumps(targeting, ensure_ascii=False).encode("utf-8")
         ).decode("ascii")

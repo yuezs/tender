@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { CSSProperties, Suspense, useEffect, useMemo, useState } from "react";
@@ -10,6 +10,7 @@ import EmptyState from "@/components/ui/empty-state";
 import MetricCard from "@/components/ui/metric-card";
 import PageHeader from "@/components/ui/page-header";
 import PanelCard from "@/components/ui/panel-card";
+import { cn } from "@/lib/cn";
 import {
   generateTender,
   generateTenderFullDocument,
@@ -57,17 +58,25 @@ type BatchGenerationState = {
 
 const statusTextMap: Record<StepStatus, string> = {
   pending: "待生成",
-  loading: "生成中...",
-  success: "生成完成√",
+  loading: "生成中",
+  success: "已完成",
   error: "生成失败"
 };
 
 const statusClassMap: Record<StepStatus, string> = {
-  pending: "bg-surface text-subtle border-line",
-  loading: "bg-warning-soft text-warning border-warning/20",
-  success: "bg-success-soft text-success border-success/20",
-  error: "bg-danger-soft text-danger border-danger/20"
+  pending: "border-line bg-surface text-subtle",
+  loading: "border-warning/20 bg-warning-soft text-warning",
+  success: "border-success/20 bg-success-soft text-success",
+  error: "border-danger/20 bg-danger-soft text-danger"
 };
+
+const stepLabelMap = {
+  upload: "文件上传",
+  parse: "文本解析",
+  extract: "字段抽取",
+  judge: "投标判断",
+  generate: "目录生成"
+} as const;
 
 const TEN_LINE_CLAMP_STYLE: CSSProperties = {
   display: "-webkit-box",
@@ -126,7 +135,7 @@ function normalizeOutlineChild(raw: unknown, parentSectionId: string, index: num
     section_id: sectionId,
     parent_section_id: parentSectionId,
     title,
-    purpose: String(payload.purpose ?? "").trim() || "按本小节目录要求生成正文。",
+    purpose: String(payload.purpose ?? "").trim() || "按当前小节目标生成对应正文。",
     writing_points: normalizeStringArray(payload.writing_points)
   };
 }
@@ -158,7 +167,7 @@ function buildDisplayOutline(generate: TenderResultSnapshot["generate"]): {
       return {
         section_id: sectionId,
         title,
-        purpose: String(payload.purpose ?? "").trim() || "按当前目录规划逐节生成正文。",
+        purpose: String(payload.purpose ?? "").trim() || "按当前目录逐节生成正文。",
         children
       };
     })
@@ -181,13 +190,13 @@ function buildDisplayOutline(generate: TenderResultSnapshot["generate"]): {
   const fallbackChapters = fallbackSections.map((section) => ({
     section_id: section.section_id,
     title: section.title,
-    purpose: "当前是旧版目录结果，请重新生成目录后再逐节生成正文。",
+    purpose: "当前结果仍是旧版目录结构，请重新生成目录后再按小节生成正文。",
     children: [
       {
         section_id: `${section.section_id}.1`,
         parent_section_id: section.section_id,
         title: `${section.title}正文`,
-        purpose: "当前仅用于展示旧结果摘要。",
+        purpose: "当前内容仅用于展示旧结果摘要。",
         writing_points: section.raw
           .split("\n")
           .map((line) => line.trim())
@@ -271,10 +280,13 @@ function dedupeKnowledge(items: KnowledgeUsedItem[]) {
 
 function ProgressBar({ completed, total }: { completed: number; total: number }) {
   const percent = total ? Math.round((completed / total) * 100) : 0;
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-xs text-muted">
-        <span>{completed}/{total || 0} 小节已完成</span>
+        <span>
+          已完成 {completed}/{total || 0}
+        </span>
         <span>{percent}%</span>
       </div>
       <div className="h-2 rounded-full bg-panel">
@@ -383,10 +395,12 @@ function ResultsPageContent() {
     if (!snapshot) {
       return [];
     }
+
     return dedupeKnowledge([...(snapshot.judge.knowledge_used ?? []), ...(snapshot.generate.knowledge_used ?? [])]);
   }, [snapshot]);
 
   const uploadedAt = snapshot ? new Date(snapshot.uploaded_at).toLocaleString("zh-CN") : "";
+  const updatedAt = snapshot ? new Date(snapshot.updated_at || snapshot.uploaded_at).toLocaleString("zh-CN") : "";
   const downloadUrl =
     snapshot?.generate.download_ready && snapshot.generate.download_url
       ? resolveApiUrl(snapshot.generate.download_url)
@@ -422,7 +436,7 @@ function ResultsPageContent() {
       }
 
       window.open(nextUrl, "_blank", "noopener,noreferrer");
-      setPageMessage("目录文档已准备完成，可直接下载。");
+      setPageMessage("目录文档已准备完成，可以直接下载。");
     } catch (error) {
       const message = error instanceof Error ? error.message : "目录下载准备失败";
       window.alert(message);
@@ -440,7 +454,7 @@ function ResultsPageContent() {
     try {
       const documentPayload = await generateTenderFullDocument(snapshot.upload.file_id);
       window.open(resolveApiUrl(documentPayload.download_url), "_blank", "noopener,noreferrer");
-      setPageMessage("全文 Word 已生成，可直接下载。");
+      setPageMessage("全文 Word 已生成，可以直接下载。");
     } catch (error) {
       const message = error instanceof Error ? error.message : "全文 Word 生成失败";
       window.alert(message);
@@ -494,7 +508,7 @@ function ResultsPageContent() {
     }
 
     if (!outlineState.supportsSectionGeneration) {
-      setPageMessage("当前是旧版目录结果，请先重新生成一次目录，再按小节生成正文。");
+      setPageMessage("当前仍是旧版目录结果，请先重新生成目录，再按小节生成正文。");
       return;
     }
 
@@ -550,7 +564,7 @@ function ResultsPageContent() {
     }
 
     if (!outlineState.supportsSectionGeneration) {
-      setPageMessage("当前是旧版目录结果，请先重新生成一次目录，再按小节生成正文。");
+      setPageMessage("当前仍是旧版目录结果，请先重新生成目录，再按小节生成正文。");
       return;
     }
 
@@ -647,9 +661,9 @@ function ResultsPageContent() {
   return (
     <AppShell>
       <PageHeader
-        eyebrow="Tender Workspace"
+        eyebrow="结果审阅工作台"
         title="招标处理结果"
-        description="先生成标书目录，再按目录逐节生成正文。当前页面支持查看每个大章节与小节的生成进度，并可通过弹窗查看正文。"
+        description="先确认是否建议继续投标，再审阅关键字段、风险提示和正文生成进度，并进入下一步处理。"
         footer={
           <div className="flex flex-wrap gap-3">
             {snapshot ? (
@@ -659,7 +673,7 @@ function ResultsPageContent() {
                 onClick={handleDownloadDraft}
                 disabled={isPreparingDownload}
               >
-                {isPreparingDownload ? "准备下载中..." : "下载标书目录"}
+                {isPreparingDownload ? "准备目录下载中..." : "下载标书目录"}
               </button>
             ) : null}
             {snapshot ? (
@@ -680,205 +694,339 @@ function ResultsPageContent() {
         aside={
           <div className="grid grid-cols-2 gap-3">
             <MetricCard
-              label="整体进度"
-              value={`${overallProgress.completed}/${overallProgress.total || 0}`}
-              helper={`${overallProgress.percent}% 已完成`}
-              tone={overallProgress.completed > 0 ? "success" : "accent"}
+              label="投标建议"
+              value={snapshot ? (snapshot.judge.should_bid ? "建议推进" : "谨慎评估") : "待加载"}
+              helper={snapshot ? `更新时间：${updatedAt}` : "等待结果加载"}
+              tone={snapshot?.judge.should_bid ? "success" : "warning"}
             />
             <MetricCard
-              label="目录状态"
-              value={outlineState.supportsSectionGeneration ? "可逐节生成" : "需重生目录"}
-              helper={snapshot ? `更新时间：${uploadedAt}` : "等待结果加载"}
-              tone={outlineState.supportsSectionGeneration ? "accent" : "warning"}
+              label="正文进度"
+              value={`${overallProgress.completed}/${overallProgress.total || 0}`}
+              helper={`${overallProgress.percent}% 已完成`}
+              tone={overallProgress.completed > 0 ? "accent" : "default"}
             />
           </div>
         }
       />
 
-      <div className="mb-6 rounded-2xl border bg-surface px-4 py-3 text-sm leading-6 text-muted">
-        {pageMessage || "当前页面会优先显示后端结果。"}
+      <div className="ui-page-note mt-6">
+        <p className="ui-field-label">当前提示</p>
+        <p className="mt-2 text-sm leading-6 text-muted">{pageMessage || "当前页面优先展示后端结果。"}</p>
       </div>
 
       {isLoading ? (
-        <PanelCard title="结果加载中" description="正在从后端读取最近一次招标处理结果。">
-          <div className="rounded-2xl border bg-surface px-4 py-6 text-sm text-muted">请稍候...</div>
-        </PanelCard>
+        <div className="mt-6">
+          <PanelCard title="结果加载中" description="正在读取最近一次招标处理结果。">
+            <div className="rounded-lg border border-line bg-panel px-4 py-6 text-sm text-muted">请稍候...</div>
+          </PanelCard>
+        </div>
       ) : !snapshot ? (
-        <PanelCard title="暂无结果" description="当前还没有可查看的处理结果。">
-          <EmptyState
-            title="请先完成一次招标处理"
-            description="上传并跑通主链路后，这里才会展示目录、进度和正文查看入口。"
-            action={
-              <Link className="ui-button-primary" href="/tender">
-                前往招标处理
-              </Link>
-            }
-          />
-        </PanelCard>
+        <div className="mt-6">
+          <PanelCard title="暂无结果" description="当前还没有可查看的处理结果。">
+            <EmptyState
+              title="请先完成一次招标处理"
+              description="上传并跑通主链路后，这里才会展示审阅结论、目录进度和正文查看入口。"
+              action={
+                <Link className="ui-button-primary" href="/tender">
+                  前往招标处理
+                </Link>
+              }
+            />
+          </PanelCard>
+        </div>
       ) : (
         <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="项目名称" value={snapshot.extract.project_name || "待识别"} helper="来自抽取结果" tone="accent" />
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="项目名称" value={snapshot.extract.project_name || "待识别"} helper="来自字段抽取结果" tone="accent" />
             <MetricCard
-              label="投标建议"
-              value={snapshot.judge.should_bid ? "建议推进" : "谨慎评估"}
-              helper={snapshot.judge.reason}
-              tone={snapshot.judge.should_bid ? "success" : "warning"}
+              label="风险提示"
+              value={`${snapshot.judge.risks.length} 项`}
+              helper={snapshot.judge.risks[0] || "当前没有明显风险提示"}
+              tone={snapshot.judge.risks.length ? "warning" : "success"}
             />
             <MetricCard
-              label="已完成小节"
-              value={`${overallProgress.completed}/${overallProgress.total || 0}`}
-              helper={`当前完成度 ${overallProgress.percent}%`}
-              tone="success"
+              label="知识引用"
+              value={`${combinedKnowledge.length} 条`}
+              helper={combinedKnowledge[0]?.document_title || "当前未命中知识片段"}
+              tone={combinedKnowledge.length ? "accent" : "default"}
             />
             <MetricCard
-              label="下载状态"
-              value={downloadUrl ? "已就绪" : "可补生成"}
-              helper={snapshot.generate.document_file_name || `执行时间：${uploadedAt}`}
+              label="文档导出"
+              value={downloadUrl ? "已就绪" : "待准备"}
+              helper={snapshot.generate.document_file_name || `上传时间：${uploadedAt}`}
+              tone={downloadUrl ? "success" : "default"}
             />
           </div>
 
-          <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_360px]">
+          <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_340px]">
             <div className="space-y-6">
-              <PanelCard
-                title="标书目录"
-                description="点击大章节可查看整章正文，点击小节可查看小节正文；每个小节都支持单独生成。"
-              >
-                <div className="space-y-5">
-                  <div className="rounded-2xl border bg-surface px-4 py-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="ui-field-label">整份标书生成进度</p>
-                        <p className="mt-2 text-sm font-semibold text-ink">
-                          已完成 {overallProgress.completed} / {overallProgress.total || 0} 个小节
-                        </p>
+              <PanelCard title="审阅结论" description="首屏先看结论、风险和下一步动作，再决定继续处理方式。">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_320px]">
+                  <div className="space-y-4">
+                    <div className="ui-summary-card-accent">
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0 flex-1">
+                          <p className="ui-field-label">结论摘要</p>
+                          <div className="mt-3 flex flex-wrap items-center gap-3">
+                            <span
+                              className={cn(
+                                "rounded-full border px-3 py-1 text-xs font-semibold",
+                                snapshot.judge.should_bid
+                                  ? "border-success/20 bg-success-soft text-success"
+                                  : "border-warning/20 bg-warning-soft text-warning"
+                              )}
+                            >
+                              {snapshot.judge.should_bid ? "建议推进投标" : "建议谨慎评估"}
+                            </span>
+                            <span className="text-sm text-muted">{snapshot.extract.project_name || "项目名称待识别"}</span>
+                          </div>
+                          <p className="mt-4 text-base font-semibold leading-7 text-ink">{snapshot.judge.reason}</p>
+                        </div>
+                        <div className="shrink-0 text-sm text-muted">
+                          <p>最近更新</p>
+                          <p className="mt-1 font-medium text-ink">{updatedAt}</p>
+                        </div>
                       </div>
-                      {!outlineState.supportsSectionGeneration ? (
-                        <span className="rounded-full bg-warning-soft px-3 py-1 text-xs font-semibold text-warning">
-                          当前结果还是旧版目录
-                        </span>
-                      ) : remainingSections.length ? (
-                        <button
-                          type="button"
-                          className="ui-button-primary"
-                          disabled={batchState.running || Boolean(sectionActionId)}
-                          onClick={() => void handleGenerateAllSections()}
-                        >
-                          {batchState.running
-                            ? `连续生成中 ${batchState.completed}/${batchState.total}`
-                            : `一键生成剩余 ${remainingSections.length} 节`}
-                        </button>
-                      ) : (
-                        <span className="rounded-full bg-success-soft px-3 py-1 text-xs font-semibold text-success">
-                          全部小节已生成
-                        </span>
-                      )}
                     </div>
-                    <div className="mt-4">
-                      <ProgressBar completed={overallProgress.completed} total={overallProgress.total} />
-                    </div>
-                    {batchState.running ? (
-                      <p className="mt-3 text-xs text-accent">
-                        正在连续生成：{batchState.currentTitle || "准备中"}，已完成 {batchState.completed}/{batchState.total}
-                      </p>
-                    ) : batchState.total ? (
-                      <p className="mt-3 text-xs text-muted">
-                        最近一次连续生成：成功 {batchState.completed} 个，失败 {batchState.failedCount} 个。
-                      </p>
-                    ) : null}
-                  </div>
 
-                  {outlineState.chapters.map((chapter) => {
-                    const chapterProgress = calculateChapterProgress(chapter, outlineState.sectionContents);
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      <div className="ui-summary-card">
+                        <p className="ui-field-label">风险提示</p>
+                        <ul className="mt-4 space-y-3 text-sm leading-6 text-muted">
+                          {(snapshot.judge.risks.length ? snapshot.judge.risks : ["当前没有明显风险提示"]).map((risk) => (
+                            <li key={risk} className="flex gap-2">
+                              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
+                              <span>{risk}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
 
-                    return (
-                      <section key={chapter.section_id} className="rounded-2xl border bg-surface px-4 py-4">
-                        <div className="flex flex-col gap-4 border-b border-line pb-4 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="min-w-0 flex-1">
+                      <div className="ui-summary-card">
+                        <p className="ui-field-label">后续动作</p>
+                        <p className="mt-4 text-sm leading-6 text-muted">
+                          {!outlineState.supportsSectionGeneration
+                            ? "当前结果仍是旧版目录，建议先回到主链路重新生成目录，再继续正文处理。"
+                            : remainingSections.length
+                              ? `还有 ${remainingSections.length} 个小节待生成，建议先连续生成，再集中抽查章节内容。`
+                              : downloadUrl
+                                ? "目录与全文文档均可导出，下一步建议做最终校对并整理投标材料。"
+                                : "正文已基本准备完成，下一步建议导出全文并做最终校对。"}
+                        </p>
+                        <div className="mt-5 flex flex-wrap gap-2">
+                          {!outlineState.supportsSectionGeneration ? (
+                            <Link className="ui-button-primary" href={`/tender?file_id=${snapshot.upload.file_id}`}>
+                              返回重生目录
+                            </Link>
+                          ) : remainingSections.length ? (
                             <button
                               type="button"
-                              className="text-left"
-                              onClick={() => void handleOpenSection(chapter.section_id, chapter.title)}
+                              className="ui-button-primary"
+                              disabled={batchState.running || Boolean(sectionActionId)}
+                              onClick={() => void handleGenerateAllSections()}
                             >
-                              <p className="text-sm font-semibold text-ink">
-                                {chapter.section_id} {chapter.title}
-                              </p>
+                              {batchState.running
+                                ? `连续生成中 ${batchState.completed}/${batchState.total}`
+                                : `继续生成剩余 ${remainingSections.length} 节`}
                             </button>
-                            <p className="ui-help mt-2">{chapter.purpose}</p>
-                          </div>
-                          <div className="w-full max-w-44 space-y-2">
-                            <span className="block text-right text-xs font-semibold text-muted">
-                              进度 {chapterProgress.completed}/{chapterProgress.total}
-                            </span>
-                            <ProgressBar completed={chapterProgress.completed} total={chapterProgress.total} />
-                          </div>
+                          ) : (
+                            <button
+                              type="button"
+                              className="ui-button-primary"
+                              onClick={handleDownloadFullDocument}
+                              disabled={isPreparingFullDownload}
+                            >
+                              {isPreparingFullDownload ? "生成全文中..." : "导出全文 Word"}
+                            </button>
+                          )}
+                          <button type="button" className="ui-button-secondary" onClick={() => setIsParsePreviewOpen(true)}>
+                            查看解析全文
+                          </button>
                         </div>
+                      </div>
+                    </div>
+                  </div>
 
-                        <div className="mt-4 space-y-3">
-                          {chapter.children.map((child) => {
-                            const sectionState = outlineState.sectionContents[child.section_id];
-                            const sectionStatus = sectionState?.status ?? "pending";
-                            const isSectionLoading = sectionActionId === child.section_id || sectionStatus === "loading";
-
-                            return (
-                              <div
-                                key={child.section_id}
-                                className="flex flex-col gap-3 rounded-2xl border border-line bg-panel px-4 py-4 lg:flex-row lg:items-start lg:justify-between"
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <button
-                                    type="button"
-                                    className="flex flex-wrap items-center gap-2 text-left"
-                                    onClick={() => void handleOpenSection(child.section_id, child.title)}
-                                  >
-                                    <span className="text-sm font-semibold text-ink">
-                                      {child.section_id} {child.title}
-                                    </span>
-                                    <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusClassMap[sectionStatus]}`}>
-                                      {statusTextMap[sectionStatus]}
-                                    </span>
-                                  </button>
-                                  <p className="ui-help mt-2">{child.purpose}</p>
-                                  {child.writing_points.length ? (
-                                    <ul className="mt-3 space-y-1 text-sm leading-6 text-muted">
-                                      {child.writing_points.slice(0, 3).map((point) => (
-                                        <li key={`${child.section_id}-${point}`}>- {point}</li>
-                                      ))}
-                                    </ul>
-                                  ) : null}
-                                  {sectionState?.error_message ? (
-                                    <p className="mt-3 text-xs text-danger">{sectionState.error_message}</p>
-                                  ) : null}
-                                </div>
-
-                                <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
-                                  <button
-                                    type="button"
-                                    className="ui-button-ghost"
-                                    onClick={() => void handleOpenSection(child.section_id, child.title)}
-                                  >
-                                    查看正文
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="ui-button-primary"
-                                    disabled={Boolean(sectionActionId) || batchState.running || !outlineState.supportsSectionGeneration}
-                                    onClick={() => void handleGenerateSection(chapter.section_id, child)}
-                                  >
-                                    {isSectionLoading ? "生成中..." : sectionStatus === "success" ? "重新生成" : "生成正文"}
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
+                  <div className="ui-summary-card">
+                    <p className="ui-field-label">当前状态</p>
+                    <div className="mt-4 space-y-4">
+                      <div>
+                        <p className="text-sm font-semibold text-ink">正文生成进度</p>
+                        <div className="mt-3">
+                          <ProgressBar completed={overallProgress.completed} total={overallProgress.total} />
                         </div>
-                      </section>
-                    );
-                  })}
+                      </div>
+                      <div className="border-t border-line pt-4">
+                        <p className="text-sm font-semibold text-ink">目录可用性</p>
+                        <p className="mt-2 text-sm leading-6 text-muted">
+                          {outlineState.supportsSectionGeneration ? "当前目录支持按小节连续生成正文。" : "当前仍是旧版目录结果，暂不支持新的按节生成流程。"}
+                        </p>
+                      </div>
+                      <div className="border-t border-line pt-4">
+                        <p className="text-sm font-semibold text-ink">导出准备</p>
+                        <p className="mt-2 text-sm leading-6 text-muted">
+                          {downloadUrl ? "目录文档已可下载，全文 Word 可继续导出。" : "目录文档尚未准备完成，可先继续正文生成或重新准备下载。"}
+                        </p>
+                      </div>
+                      {batchState.running ? (
+                        <div className="rounded-md border border-accent/20 bg-accent/5 px-4 py-3 text-sm text-accent">
+                          正在连续生成：{batchState.currentTitle || "准备中"}，已完成 {batchState.completed}/{batchState.total}
+                        </div>
+                      ) : batchState.total ? (
+                        <div className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-muted">
+                          最近一次连续生成：成功 {batchState.completed} 节，失败 {batchState.failedCount} 节。
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
               </PanelCard>
 
-              <PanelCard title="解析文本预览" description="用于核对原始文本解析结果，辅助判断目录和字段抽取是否准确。">
+              <PanelCard
+                title="标书目录与正文生成"
+                description="按目录逐章审阅，并在需要时继续生成或重生成小节正文。"
+                actions={
+                  !outlineState.supportsSectionGeneration ? (
+                    <span className="rounded-full border border-warning/20 bg-warning-soft px-3 py-1 text-xs font-semibold text-warning">
+                      旧版目录结果
+                    </span>
+                  ) : remainingSections.length ? (
+                    <button
+                      type="button"
+                      className="ui-button-primary"
+                      disabled={batchState.running || Boolean(sectionActionId)}
+                      onClick={() => void handleGenerateAllSections()}
+                    >
+                      {batchState.running ? `连续生成中 ${batchState.completed}/${batchState.total}` : `生成剩余 ${remainingSections.length} 节`}
+                    </button>
+                  ) : (
+                    <span className="rounded-full border border-success/20 bg-success-soft px-3 py-1 text-xs font-semibold text-success">
+                      正文已全部生成
+                    </span>
+                  )
+                }
+              >
+                <div className="space-y-4">
+                  <div className="ui-inset grid gap-4 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+                    <div>
+                      <p className="ui-field-label">目录处理说明</p>
+                      <p className="mt-3 text-sm leading-6 text-muted">
+                        先看章节目的和撰写要点，再按需查看正文或继续生成。主流程保持连续，不额外拆分业务步骤。
+                      </p>
+                    </div>
+                    <div className="space-y-3">
+                      <ProgressBar completed={overallProgress.completed} total={overallProgress.total} />
+                      <p className="text-xs leading-5 text-muted">
+                        {remainingSections.length
+                          ? `当前还有 ${remainingSections.length} 个小节未完成。`
+                          : "当前所有小节都已生成完成。"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="overflow-hidden rounded-lg border border-line bg-panel">
+                    {outlineState.chapters.map((chapter, chapterIndex) => {
+                      const chapterProgress = calculateChapterProgress(chapter, outlineState.sectionContents);
+
+                      return (
+                        <section
+                          key={chapter.section_id}
+                          className={cn("px-4 py-5 sm:px-5", chapterIndex > 0 && "border-t border-line")}
+                        >
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0 flex-1">
+                              <button
+                                type="button"
+                                className="cursor-pointer text-left"
+                                onClick={() => void handleOpenSection(chapter.section_id, chapter.title)}
+                              >
+                                <p className="text-sm font-semibold leading-6 text-ink">
+                                  {chapter.section_id} {chapter.title}
+                                </p>
+                              </button>
+                              <p className="mt-2 text-sm leading-6 text-muted">{chapter.purpose}</p>
+                            </div>
+                            <div className="w-full lg:max-w-52">
+                              <ProgressBar completed={chapterProgress.completed} total={chapterProgress.total} />
+                            </div>
+                          </div>
+
+                          <div className="mt-4 overflow-hidden rounded-lg border border-line bg-surface">
+                            {chapter.children.map((child, childIndex) => {
+                              const sectionState = outlineState.sectionContents[child.section_id];
+                              const sectionStatus = sectionState?.status ?? "pending";
+                              const isSectionLoading = sectionActionId === child.section_id || sectionStatus === "loading";
+
+                              return (
+                                <div
+                                  key={child.section_id}
+                                  className={cn("px-4 py-4", childIndex > 0 && "border-t border-line")}
+                                >
+                                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <button
+                                          type="button"
+                                          className="cursor-pointer text-left text-sm font-semibold leading-6 text-ink"
+                                          onClick={() => void handleOpenSection(child.section_id, child.title)}
+                                        >
+                                          {child.section_id} {child.title}
+                                        </button>
+                                        <span
+                                          className={cn(
+                                            "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                                            statusClassMap[sectionStatus]
+                                          )}
+                                        >
+                                          {statusTextMap[sectionStatus]}
+                                        </span>
+                                      </div>
+                                      <p className="mt-2 text-sm leading-6 text-muted">{child.purpose}</p>
+                                      {child.writing_points.length ? (
+                                        <ul className="mt-3 space-y-2 text-sm leading-6 text-muted">
+                                          {child.writing_points.slice(0, 3).map((point) => (
+                                            <li key={`${child.section_id}-${point}`} className="flex gap-2">
+                                              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-line-strong" />
+                                              <span>{point}</span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      ) : null}
+                                      {sectionState?.error_message ? (
+                                        <p className="mt-3 text-xs leading-5 text-danger">{sectionState.error_message}</p>
+                                      ) : null}
+                                    </div>
+
+                                    <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
+                                      <button
+                                        type="button"
+                                        className="ui-button-ghost"
+                                        onClick={() => void handleOpenSection(child.section_id, child.title)}
+                                      >
+                                        查看正文
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="ui-button-primary"
+                                        disabled={Boolean(sectionActionId) || batchState.running || !outlineState.supportsSectionGeneration}
+                                        onClick={() => void handleGenerateSection(chapter.section_id, child)}
+                                      >
+                                        {isSectionLoading ? "生成中..." : sectionStatus === "success" ? "重新生成" : "生成正文"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </section>
+                      );
+                    })}
+                  </div>
+                </div>
+              </PanelCard>
+
+              <PanelCard title="解析文本预览" description="用于核对原始文本解析结果，辅助判断目录和关键字段是否可信。">
                 <button
                   type="button"
                   className="block w-full text-left"
@@ -889,78 +1037,99 @@ function ResultsPageContent() {
                     {snapshot.parse.text}
                   </pre>
                 </button>
-                <p className="ui-help mt-3">最多展示 10 行，点击文字区域可查看全文。</p>
+                <p className="mt-3 text-sm leading-6 text-muted">默认仅展示前 10 行，点击文本区域可查看全文。</p>
               </PanelCard>
             </div>
 
             <div className="space-y-6">
-              <PanelCard title="处理状态" description="用于查看上传、解析、抽取、判断和目录生成的整体状态。">
-                <div className="space-y-3">
-                  {(["upload", "parse", "extract", "judge", "generate"] as const).map((step) => (
-                    <div key={step} className="rounded-2xl border bg-surface px-4 py-4">
-                      <p className="ui-field-label">{step}</p>
-                      <p className="mt-2 text-sm font-semibold text-ink">{snapshot.steps[step].status}</p>
-                      <p className="ui-help mt-1">{snapshot.steps[step].message}</p>
+              <PanelCard title="处理状态" description="用于快速确认各阶段是否成功完成，以及当前结果是否适合继续使用。">
+                <div className="overflow-hidden rounded-lg border border-line bg-panel">
+                  {(["upload", "parse", "extract", "judge", "generate"] as const).map((step, index) => (
+                    <div
+                      key={step}
+                      className={cn("flex items-start justify-between gap-4 px-4 py-4", index > 0 && "border-t border-line")}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="ui-field-label">{stepLabelMap[step]}</p>
+                        <p className="mt-2 text-sm leading-6 text-muted">{snapshot.steps[step].message}</p>
+                      </div>
+                      <span
+                        className={cn(
+                          "shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                          statusClassMap[snapshot.steps[step].status]
+                        )}
+                      >
+                        {statusTextMap[snapshot.steps[step].status]}
+                      </span>
                     </div>
                   ))}
                 </div>
               </PanelCard>
 
-              <PanelCard title="核心字段抽取" description="先核对结构化字段，再回到长文本验证抽取质量。">
+              <PanelCard title="核心字段" description="先核对结构化字段，再结合风险提示和正文内容做最终判断。">
                 <div className="space-y-4">
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                    {extractSummary.map((item) => (
-                      <div key={item.label} className="rounded-2xl border bg-surface px-4 py-4">
+                  <div className="overflow-hidden rounded-lg border border-line bg-panel">
+                    {extractSummary.map((item, index) => (
+                      <div key={item.label} className={cn("px-4 py-4", index > 0 && "border-t border-line")}>
                         <p className="ui-field-label">{item.label}</p>
                         <p className="mt-3 text-sm font-semibold leading-6 text-ink">{item.value}</p>
                       </div>
                     ))}
                   </div>
-                  <div className="space-y-3 rounded-2xl border bg-surface px-4 py-4 text-sm leading-6 text-muted">
-                    <p>
-                      <span className="font-semibold text-ink">资质要求：</span>
-                      {snapshot.extract.qualification_requirements.join("；") || "未识别"}
-                    </p>
-                    <p>
-                      <span className="font-semibold text-ink">交付要求：</span>
-                      {snapshot.extract.delivery_requirements.join("；") || "未识别"}
-                    </p>
-                    <p>
-                      <span className="font-semibold text-ink">评分重点：</span>
-                      {snapshot.extract.scoring_focus.join("；") || "未识别"}
-                    </p>
-                  </div>
-                </div>
-              </PanelCard>
 
-              <PanelCard title="投标建议" description="建议结果和风险提示，应作为继续生成正文前的第一层判断依据。">
-                <div className="space-y-4">
-                  <div className="rounded-2xl border bg-surface px-4 py-4">
-                    <p className="ui-field-label">建议结论</p>
-                    <p className="mt-3 text-base font-semibold text-ink">
-                      {snapshot.judge.should_bid ? "建议投标" : "建议谨慎评估"}
-                    </p>
-                    <p className="ui-copy mt-2">{snapshot.judge.reason}</p>
-                  </div>
-                  <div className="rounded-2xl border bg-surface px-4 py-4">
-                    <p className="ui-field-label">风险提示</p>
+                  <div className="rounded-lg border border-line bg-panel px-4 py-4">
+                    <p className="ui-field-label">资质要求</p>
                     <ul className="mt-3 space-y-2 text-sm leading-6 text-muted">
-                      {(snapshot.judge.risks.length ? snapshot.judge.risks : ["暂无风险提示"]).map((risk) => (
-                        <li key={risk}>- {risk}</li>
+                      {(snapshot.extract.qualification_requirements.length
+                        ? snapshot.extract.qualification_requirements
+                        : ["未识别"]).map((item) => (
+                        <li key={item} className="flex gap-2">
+                          <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-line-strong" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="rounded-lg border border-line bg-panel px-4 py-4">
+                    <p className="ui-field-label">交付要求</p>
+                    <ul className="mt-3 space-y-2 text-sm leading-6 text-muted">
+                      {(snapshot.extract.delivery_requirements.length ? snapshot.extract.delivery_requirements : ["未识别"]).map(
+                        (item) => (
+                          <li key={item} className="flex gap-2">
+                            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-line-strong" />
+                            <span>{item}</span>
+                          </li>
+                        )
+                      )}
+                    </ul>
+                  </div>
+
+                  <div className="rounded-lg border border-line bg-panel px-4 py-4">
+                    <p className="ui-field-label">评分重点</p>
+                    <ul className="mt-3 space-y-2 text-sm leading-6 text-muted">
+                      {(snapshot.extract.scoring_focus.length ? snapshot.extract.scoring_focus : ["未识别"]).map((item) => (
+                        <li key={item} className="flex gap-2">
+                          <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-line-strong" />
+                          <span>{item}</span>
+                        </li>
                       ))}
                     </ul>
                   </div>
                 </div>
               </PanelCard>
 
-              <PanelCard title="引用知识" description="用于确认当前目录和正文生成引用了哪些企业资料片段。">
+              <PanelCard title="引用知识" description="用于确认当前判断和正文生成引用了哪些企业资料片段。">
                 {combinedKnowledge.length ? (
-                  <div className="space-y-3">
-                    {combinedKnowledge.map((item) => (
-                      <article key={`${item.category}-${item.document_title}-${item.section_title}`} className="rounded-2xl border bg-surface px-4 py-4">
+                  <div className="overflow-hidden rounded-lg border border-line bg-panel">
+                    {combinedKnowledge.map((item, index) => (
+                      <article
+                        key={`${item.category}-${item.document_title}-${item.section_title}`}
+                        className={cn("px-4 py-4", index > 0 && "border-t border-line")}
+                      >
                         <p className="ui-field-label">{item.category}</p>
-                        <p className="mt-3 text-sm font-semibold text-ink">{item.document_title}</p>
-                        <p className="ui-help mt-1">{item.section_title}</p>
+                        <p className="mt-2 text-sm font-semibold leading-6 text-ink">{item.document_title}</p>
+                        <p className="mt-1 text-sm leading-6 text-muted">{item.section_title}</p>
                       </article>
                     ))}
                   </div>
@@ -979,7 +1148,7 @@ function ResultsPageContent() {
       <AppModal
         open={Boolean(activeModal)}
         onClose={() => setActiveModal(null)}
-        eyebrow={activeModal?.scope === "chapter" ? "大章节正文" : "小节正文"}
+        eyebrow={activeModal?.scope === "chapter" ? "章节正文" : "小节正文"}
         title={activeModal?.title ?? ""}
         description={
           activeModal?.scope === "chapter"
@@ -990,15 +1159,20 @@ function ResultsPageContent() {
         bodyClassName="max-h-[calc(90vh-96px)] overflow-y-auto px-6 py-5"
       >
         {activeModal?.isLoading ? (
-          <div className="rounded-2xl border bg-surface px-4 py-6 text-sm text-muted">正在加载正文内容...</div>
+          <div className="rounded-lg border border-line bg-panel px-4 py-6 text-sm text-muted">正在加载正文内容...</div>
         ) : (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusClassMap[activeModal?.status ?? "pending"]}`}>
+              <span
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                  statusClassMap[activeModal?.status ?? "pending"]
+                )}
+              >
                 {statusTextMap[activeModal?.status ?? "pending"]}
               </span>
             </div>
-            <div className="whitespace-pre-wrap rounded-2xl border bg-surface px-4 py-4 text-sm leading-7 text-ink">
+            <div className="whitespace-pre-wrap rounded-lg border border-line bg-panel px-4 py-4 text-sm leading-7 text-ink">
               {activeModal?.content ?? ""}
             </div>
           </div>

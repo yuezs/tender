@@ -50,39 +50,47 @@
 
 @layer components {
   .ui-panel {
-    @apply rounded-3xl border bg-panel shadow-panel;
+    @apply rounded-2xl border border-line/80 bg-panel shadow-panel;
   }
 
   .ui-panel-muted {
-    @apply rounded-3xl border bg-surface shadow-panel;
+    @apply rounded-2xl border border-line/70 bg-surface;
+  }
+
+  .ui-inset {
+    @apply rounded-2xl border border-line/60 bg-inset;
+  }
+
+  .ui-hero-panel {
+    @apply rounded-2xl border border-line/80 bg-panel shadow-float;
   }
 
   .ui-button-primary {
-    @apply inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-white transition hover:bg-accent-strong disabled:cursor-not-allowed disabled:bg-accent/55;
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-medium text-white shadow-panel transition-all duration-200 hover:bg-accent-strong hover:shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/20 disabled:cursor-not-allowed disabled:bg-accent/55 disabled:shadow-none;
   }
 
   .ui-button-secondary {
-    @apply inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-line-strong bg-panel px-4 text-sm font-semibold text-ink transition hover:border-accent/40 hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-line/80 bg-panel px-4 text-sm font-medium text-ink shadow-panel transition-all duration-200 hover:border-line-strong hover:bg-surface hover:shadow-panel focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/15 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .ui-button-ghost {
-    @apply inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold text-muted transition hover:bg-panel;
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium text-muted transition-colors duration-200 hover:bg-surface hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/15 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .ui-input {
-    @apply h-11 w-full rounded-xl border border-line bg-panel px-3 text-sm text-ink outline-none transition placeholder:text-subtle focus:border-accent focus:ring-4 focus:ring-accent/10 disabled:cursor-not-allowed disabled:bg-surface;
+    @apply h-10 w-full rounded-xl border border-line/80 bg-panel px-3 text-sm text-ink outline-none transition-colors duration-200 placeholder:text-subtle focus:border-accent focus:ring-4 focus:ring-accent/10 disabled:cursor-not-allowed disabled:bg-surface;
   }
 
   .ui-kicker {
-    @apply text-xs font-semibold uppercase tracking-[0.18em] text-subtle;
+    @apply text-xs font-medium text-muted;
   }
 
   .ui-page-title {
-    @apply text-3xl font-semibold tracking-tight text-ink sm:text-4xl;
+    @apply text-[30px] font-semibold leading-tight text-ink sm:text-[36px];
   }
 
   .ui-section-title {
-    @apply text-lg font-semibold tracking-tight text-ink;
+    @apply text-lg font-semibold leading-7 text-ink;
   }
 
   .ui-copy {
@@ -94,10 +102,22 @@
   }
 
   .ui-field-label {
-    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-subtle;
+    @apply text-xs font-medium leading-5 text-muted;
+  }
+
+  .ui-page-note {
+    @apply rounded-xl border border-line/70 bg-surface px-4 py-3 text-sm leading-6 text-muted;
+  }
+
+  .ui-summary-card {
+    @apply rounded-2xl border border-line/70 bg-panel px-5 py-5 shadow-panel;
+  }
+
+  .ui-summary-card-accent {
+    @apply rounded-2xl border border-accent/15 bg-accent-soft px-5 py-5 shadow-panel;
   }
 
   .ui-document-block {
-    @apply whitespace-pre-wrap break-words rounded-2xl border bg-surface p-4 text-sm leading-7 text-ink;
+    @apply whitespace-pre-wrap break-words rounded-2xl border border-line/70 bg-surface p-4 text-sm leading-7 text-ink;
   }
 }

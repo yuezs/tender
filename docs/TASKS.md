@@ -36,6 +36,7 @@
 - 已支持 `input.json / status.json / output.json` 产物落地。
 - 已支持最小成功复用和失败兜底。
 - 已补齐 `device identity` 握手及 token 读取。
+- 已补齐 device token 持久化、token 失配自动清理与重连，降低 Gateway 缓存失效导致的连接失败。
 
 ### 5. 项目发现前置层
 
@@ -45,8 +46,17 @@
 - 已新增前端 `/discovery` 列表页和 `/discovery/[leadId]` 详情页。
 - 已将项目发现入口加入首页和侧边导航。
 - 已接入 `collect_agent`，并注册 `tender-collect` OpenClaw agent。
+- 已补充 `keyword` 采集模式，支持 `keywords / regions / notice_types / exclude_keywords`。
+- 已支持在 discovery 列表中展示 `matched_keywords`，用于说明线索命中原因。
 
-### 6. discovery 120 秒控制与超时修复
+### 6. 工作台演示版视觉升级
+
+- 已统一前端全局 token、圆角、阴影、边框和中性色层级。
+- 已升级共享组件：页面头部、面板卡片、指标卡、弹窗、侧边导航、空状态、状态时间线。
+- 已完成 `/tender`、`/discovery`、`/results` 三个核心页面的工作台化演示版改造。
+- 已减少卡片层级和面板套面板感，强化首屏焦点、摘要区和主操作入口。
+
+### 7. discovery 120 秒控制与超时修复
 
 - 已将 `ggzy` 采集默认候选数收敛到 `5`。
 - 已将单次页面请求默认超时收敛到 `8s`。
@@ -60,6 +70,7 @@
 - discovery 当前只支持 `ggzy` 单站手动采集。
 - discovery 不下载附件，不解析附件，不自动进入写标书主链路。
 - discovery 推荐逻辑当前基于规则评分加知识库命中，不新增独立评分 agent。
+- discovery 关键词采集第一版仍不做自动补全、历史联想、常用策略保存和复杂同义词扩展。
 - 招标文件 `pdf` 真实解析仍未补齐。
 - 知识库前端管理能力仍较轻量。
 - 当前主链路与 discovery 记录仍主要以本地文件和 MySQL 组合保存，不做复杂工作流。
@@ -68,7 +79,7 @@
 
 ### 1. discovery
 
-- 补充更多筛选维度和列表体验。
+- 继续验证关键词采集在不同关键词质量下的结果稳定性。
 - 评估是否增加更多公开站点，但保持单次迭代可控。
 - 增加 discovery 到主链路的明确人工确认入口，而不是自动推进。
 

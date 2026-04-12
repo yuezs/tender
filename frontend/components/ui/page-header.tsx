@@ -18,20 +18,19 @@ export default function PageHeader({
   aside
 }: PageHeaderProps) {
   return (
-    <header className="ui-panel relative overflow-hidden px-5 py-6 sm:px-7 sm:py-7">
-      <div className="absolute inset-x-0 top-0 h-1 bg-accent/70" />
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-        <div className="max-w-3xl">
+    <header className="ui-hero-panel px-5 py-5 sm:px-6 sm:py-6">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 flex-1 max-w-3xl">
           {eyebrow ? <p className="ui-kicker">{eyebrow}</p> : null}
           <h1 className="ui-page-title mt-3">{title}</h1>
-          <p className="ui-copy mt-3 max-w-2xl">{description}</p>
-          {footer ? <div className="mt-5 flex flex-wrap gap-3">{footer}</div> : null}
+          <p className="ui-copy mt-3 max-w-2xl text-[15px] leading-7">{description}</p>
+          {footer ? <div className="mt-6 flex flex-wrap gap-2 border-t border-line/70 pt-5">{footer}</div> : null}
         </div>
 
         {(actions || aside) ? (
-          <div className="flex w-full flex-col gap-3 lg:w-auto lg:min-w-[280px] lg:items-end">
-            {actions ? <div className="flex w-full flex-wrap gap-3 lg:w-auto lg:justify-end">{actions}</div> : null}
-            {aside ? <div className="w-full lg:max-w-sm">{aside}</div> : null}
+          <div className="flex w-full flex-col gap-3 lg:w-[336px] lg:flex-none lg:items-stretch">
+            {actions ? <div className="flex w-full flex-wrap gap-2 lg:justify-end">{actions}</div> : null}
+            {aside ? <div className="w-full rounded-2xl border border-line/70 bg-surface px-3 py-3">{aside}</div> : null}
           </div>
         ) : null}
       </div>

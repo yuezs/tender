@@ -18,6 +18,8 @@ class DiscoveryRunRequest(BaseModel):
     profile_title: str = Field(default="", min_length=0)
     keywords: list[str] = Field(default_factory=list)
     regions: list[str] = Field(default_factory=list)
+    notice_types: list[str] = Field(default_factory=list)
+    exclude_keywords: list[str] = Field(default_factory=list)
     qualification_terms: list[str] = Field(default_factory=list)
     industry_terms: list[str] = Field(default_factory=list)
 
@@ -28,6 +30,8 @@ class DiscoveryRunTargeting(BaseModel):
     profile_title: str
     keywords: list[str]
     regions: list[str]
+    notice_types: list[str]
+    exclude_keywords: list[str]
     qualification_terms: list[str]
     industry_terms: list[str]
 
@@ -130,6 +134,7 @@ class DiscoveryProjectListItem(BaseModel):
     targeting_match_score: int
     profile_key: str
     profile_title: str
+    matched_keywords: list[str]
     recommendation_reasons: list[str]
 
 

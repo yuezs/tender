@@ -248,6 +248,8 @@ export async function runDiscoveryCollection(payload?: {
   profile_title?: string;
   keywords?: string[];
   regions?: string[];
+  notice_types?: string[];
+  exclude_keywords?: string[];
   qualification_terms?: string[];
   industry_terms?: string[];
 }): Promise<DiscoveryRunResponse> {
@@ -263,6 +265,8 @@ export async function runDiscoveryCollection(payload?: {
       profile_title: payload?.profile_title ?? "",
       keywords: payload?.keywords ?? [],
       regions: payload?.regions ?? [],
+      notice_types: payload?.notice_types ?? [],
+      exclude_keywords: payload?.exclude_keywords ?? [],
       qualification_terms: payload?.qualification_terms ?? [],
       industry_terms: payload?.industry_terms ?? []
     })

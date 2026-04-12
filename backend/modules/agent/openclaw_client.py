@@ -27,6 +27,7 @@ except ImportError:  # pragma: no cover - optional until dependency is installed
 
 SUCCESS_STATUSES = {"ok", "success", "completed"}
 DEVICE_IDENTITY_VERSION = 1
+DEVICE_AUTH_VERSION = 1
 ED25519_SPKI_PREFIX = bytes.fromhex("302a300506032b6570032100")
 
 
@@ -54,6 +55,26 @@ class GatewayRpcConnection(AbstractContextManager):
                 "Missing dependency 'websocket-client'. Install backend requirements first."
             )
 
+        # 最多尝试 2 次：
+        # 第 1 次：正常连
+        # 第 2 次：如果发现 device token 不匹配，清掉本地缓存后再连
+        last_error: Exception | None = None
+        for attempt in range(2):
+            try:
+                self._connect_once()
+                return
+            except BusinessException as exc:
+                last_error = exc
+                if attempt == 0 and self._is_device_token_mismatch_error(exc):
+                    self._clear_cached_device_auth_token()
+                    self.close()
+                    continue
+                raise
+
+        if last_error:
+            raise last_error
+
+    def _connect_once(self) -> None:
         try:
             self.ws = create_connection(
                 settings.openclaw_gateway_url,
@@ -67,13 +88,37 @@ class GatewayRpcConnection(AbstractContextManager):
         if not nonce:
             raise BusinessException("OpenClaw Gateway connect challenge is missing nonce.")
 
+        role = "operator"
+        scopes = [
+            "operator.read",
+            "operator.write",
+            "operator.admin",
+        ]
+        platform_name = self._resolve_platform_name()
+        device_identity = self._load_or_create_device_identity()
+
         hello = self.request(
             "connect",
-            self._build_connect_params(nonce),
+            self._build_connect_params(
+                nonce=nonce,
+                role=role,
+                scopes=scopes,
+                platform_name=platform_name,
+                device_identity=device_identity,
+            ),
             timeout_seconds=min(settings.openclaw_timeout_seconds, 15),
         )
-        if str(hello.get("type", "")).strip() != "hello-ok":
+
+        hello_type = str(hello.get("type", "")).strip()
+        if hello_type != "hello-ok":
             raise BusinessException("OpenClaw Gateway did not return hello-ok.")
+
+        # 关键修复：握手成功后保存新的 deviceToken
+        self._persist_device_token_from_hello(
+            hello=hello,
+            device_id=device_identity.device_id,
+            role=role,
+        )
 
     def close(self) -> None:
         if self.ws is None:
@@ -109,7 +154,12 @@ class GatewayRpcConnection(AbstractContextManager):
 
         if not frame.get("ok", False):
             error = frame.get("error") or {}
+            code = str(error.get("code") or "").strip()
             message = str(error.get("message") or f"gateway request failed: {method}").strip()
+            if code:
+                raise BusinessException(
+                    f"OpenClaw Gateway {method} failed: [{code}] {message}"
+                )
             raise BusinessException(f"OpenClaw Gateway {method} failed: {message}")
 
         response_payload = frame.get("payload")
@@ -119,15 +169,15 @@ class GatewayRpcConnection(AbstractContextManager):
             raise BusinessException(f"OpenClaw Gateway {method} returned an unexpected payload.")
         return response_payload
 
-    def _build_connect_params(self, nonce: str) -> dict[str, Any]:
-        role = "operator"
-        scopes = [
-            "operator.read",
-            "operator.write",
-            "operator.admin",
-        ]
-        platform_name = self._resolve_platform_name()
-        device_identity = self._load_or_create_device_identity()
+    def _build_connect_params(
+        self,
+        *,
+        nonce: str,
+        role: str,
+        scopes: list[str],
+        platform_name: str,
+        device_identity: DeviceIdentity,
+    ) -> dict[str, Any]:
         device_token = self._load_device_auth_token(
             device_id=device_identity.device_id,
             role=role,
@@ -140,12 +190,15 @@ class GatewayRpcConnection(AbstractContextManager):
             auth["token"] = settings.openclaw_gateway_token
         elif settings.openclaw_gateway_password:
             auth["password"] = settings.openclaw_gateway_password
+
+        # 签名用当前实际认证值
         signature_token = (
-            auth.get("token")
-            or auth.get("deviceToken")
+            auth.get("deviceToken")
+            or auth.get("token")
             or auth.get("bootstrapToken")
             or ""
         )
+
         signed_at_ms = int(time.time() * 1000)
         device_payload = self._build_device_auth_payload(
             device_id=device_identity.device_id,
@@ -192,10 +245,14 @@ class GatewayRpcConnection(AbstractContextManager):
             payload["auth"] = auth
         return payload
 
+    def _device_auth_store_path(self) -> Path:
+        return settings.openclaw_state_dir / "identity" / "device-auth.json"
+
     def _load_device_auth_token(self, *, device_id: str, role: str) -> str:
-        auth_store_path = settings.openclaw_state_dir / "identity" / "device-auth.json"
+        auth_store_path = self._device_auth_store_path()
         if not auth_store_path.exists():
             return ""
+
         try:
             raw = json.loads(auth_store_path.read_text(encoding="utf-8"))
         except Exception:
@@ -203,13 +260,96 @@ class GatewayRpcConnection(AbstractContextManager):
 
         if str(raw.get("deviceId", "")).strip() != device_id:
             return ""
+
         tokens = raw.get("tokens")
         if not isinstance(tokens, dict):
             return ""
+
         entry = tokens.get(role)
         if not isinstance(entry, dict):
             return ""
+
         return str(entry.get("token", "")).strip()
+
+    def _save_device_auth_token(self, *, device_id: str, role: str, token: str) -> None:
+        if not token.strip():
+            return
+
+        auth_store_path = self._device_auth_store_path()
+        auth_store_path.parent.mkdir(parents=True, exist_ok=True)
+
+        existing: dict[str, Any] = {}
+        if auth_store_path.exists():
+            try:
+                loaded = json.loads(auth_store_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    existing = loaded
+            except Exception:
+                existing = {}
+
+        stored_device_id = str(existing.get("deviceId", "")).strip()
+        if stored_device_id and stored_device_id != device_id:
+            existing = {}
+
+        tokens = existing.get("tokens")
+        if not isinstance(tokens, dict):
+            tokens = {}
+
+        tokens[role] = {
+            "token": token,
+            "updatedAtMs": int(time.time() * 1000),
+        }
+
+        payload = {
+            "version": DEVICE_AUTH_VERSION,
+            "deviceId": device_id,
+            "tokens": tokens,
+        }
+
+        auth_store_path.write_text(
+            f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n",
+            encoding="utf-8",
+        )
+
+    def _clear_cached_device_auth_token(self) -> None:
+        auth_store_path = self._device_auth_store_path()
+        if not auth_store_path.exists():
+            return
+        try:
+            auth_store_path.unlink()
+        except Exception:
+            pass
+
+    def _persist_device_token_from_hello(
+        self,
+        *,
+        hello: dict[str, Any],
+        device_id: str,
+        role: str,
+    ) -> None:
+        # 兼容两种结构：
+        # 1) hello["auth"]["deviceToken"]
+        # 2) hello["payload"]["auth"]["deviceToken"]
+        auth_payload = hello.get("auth")
+        if not isinstance(auth_payload, dict):
+            payload = hello.get("payload")
+            if isinstance(payload, dict):
+                auth_payload = payload.get("auth")
+
+        if not isinstance(auth_payload, dict):
+            return
+
+        new_device_token = str(auth_payload.get("deviceToken") or "").strip()
+        if new_device_token:
+            self._save_device_auth_token(
+                device_id=device_id,
+                role=role,
+                token=new_device_token,
+            )
+
+    def _is_device_token_mismatch_error(self, exc: Exception) -> bool:
+        message = str(exc).lower()
+        return "device_token_mismatch" in message or "device token mismatch" in message
 
     def _load_or_create_device_identity(self) -> DeviceIdentity:
         if serialization is None or ed25519 is None:
@@ -331,7 +471,7 @@ class GatewayRpcConnection(AbstractContextManager):
                 format=serialization.PublicFormat.SubjectPublicKeyInfo,
             )
             if raw.startswith(ED25519_SPKI_PREFIX):
-                raw = raw[len(ED25519_SPKI_PREFIX) :]
+                raw = raw[len(ED25519_SPKI_PREFIX):]
         return self._base64url(raw)
 
     def _fingerprint_public_key(self, public_key_pem: str) -> str:
@@ -347,7 +487,7 @@ class GatewayRpcConnection(AbstractContextManager):
                 format=serialization.PublicFormat.SubjectPublicKeyInfo,
             )
             if raw.startswith(ED25519_SPKI_PREFIX):
-                raw = raw[len(ED25519_SPKI_PREFIX) :]
+                raw = raw[len(ED25519_SPKI_PREFIX):]
         import hashlib
 
         return hashlib.sha256(raw).hexdigest()
@@ -526,7 +666,7 @@ class OpenClawClient:
             if start < 0 or end <= start:
                 raise BusinessException("OpenClaw returned non-JSON content.")
             try:
-                parsed = json.loads(candidate[start : end + 1])
+                parsed = json.loads(candidate[start:end + 1])
             except json.JSONDecodeError as exc:
                 raise BusinessException("OpenClaw returned invalid JSON.") from exc
 
@@ -614,7 +754,7 @@ class OpenClawClient:
         session_key: str,
         idempotency_key: str,
     ) -> dict[str, Any]:
-        request = {
+        return {
             "message": message,
             "agentId": agent_id,
             "sessionKey": session_key,
@@ -622,7 +762,6 @@ class OpenClawClient:
             "timeout": settings.openclaw_timeout_seconds,
             "idempotencyKey": idempotency_key,
         }
-        return request
 
     def _extract_payload_text(self, payload: dict[str, Any]) -> str:
         payloads = payload.get("payloads")

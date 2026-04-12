@@ -558,7 +558,11 @@ class DiscoveryService:
             normalized=normalized,
             targeting=targeting,
         )
-        recommendation_score = max(0, min(knowledge_support_score + completeness_score, 100))
+        recommendation_score = knowledge_support_score + completeness_score
+        if targeting_result.get("matched_exclude_keywords"):
+            recommendation_score -= 20
+            risks.append("命中关键词采集排除词，建议谨慎处理。")
+        recommendation_score = max(0, min(recommendation_score, 100))
         recommendation_level = self._map_recommendation_level(recommendation_score)
 
         matched_knowledge = []
@@ -833,7 +837,7 @@ class DiscoveryService:
 
     def _normalize_targeting(self, payload: dict) -> dict:
         mode = str(payload.get("mode", "broad")).strip().lower()
-        if mode not in {"targeted", "broad"}:
+        if mode not in {"targeted", "broad", "keyword"}:
             mode = "broad"
 
         normalized = {
@@ -842,6 +846,8 @@ class DiscoveryService:
             "profile_title": str(payload.get("profile_title", "")).strip(),
             "keywords": self._normalize_text_list(payload.get("keywords"), limit=6),
             "regions": self._normalize_text_list(payload.get("regions"), limit=4),
+            "notice_types": self._normalize_text_list(payload.get("notice_types"), limit=4),
+            "exclude_keywords": self._normalize_text_list(payload.get("exclude_keywords"), limit=6),
             "qualification_terms": self._normalize_text_list(
                 payload.get("qualification_terms"),
                 limit=5,
@@ -850,9 +856,18 @@ class DiscoveryService:
         }
         has_terms = any(
             normalized[key]
-            for key in ("keywords", "regions", "qualification_terms", "industry_terms")
+            for key in ("keywords", "regions", "notice_types", "qualification_terms", "industry_terms")
         )
-        if normalized["mode"] != "targeted" or not has_terms:
+        if normalized["mode"] == "keyword" and not normalized["keywords"]:
+            raise BusinessException("关键词采集至少需要输入一个关键词")
+        if normalized["mode"] == "targeted" and not has_terms:
+            normalized["mode"] = "broad"
+            normalized["profile_key"] = ""
+            normalized["profile_title"] = ""
+        elif normalized["mode"] == "keyword":
+            normalized["profile_key"] = ""
+            normalized["profile_title"] = ""
+        elif normalized["mode"] != "broad":
             normalized["mode"] = "broad"
             normalized["profile_key"] = ""
             normalized["profile_title"] = ""
@@ -865,7 +880,7 @@ class DiscoveryService:
         normalized: dict,
         targeting: dict,
     ) -> dict:
-        if targeting.get("mode") != "targeted":
+        if targeting.get("mode") not in {"targeted", "keyword"}:
             return {
                 "targeting_match_score": 0,
                 "profile_key": "",
@@ -873,6 +888,8 @@ class DiscoveryService:
                 "targeting_reasons": [],
                 "matched_keywords": [],
                 "matched_regions": [],
+                "matched_notice_types": [],
+                "matched_exclude_keywords": [],
                 "matched_qualification_terms": [],
                 "matched_industry_terms": [],
             }
@@ -880,6 +897,7 @@ class DiscoveryService:
         haystacks = [
             extract_result.get("project_name", ""),
             normalized.get("title", ""),
+            extract_result.get("notice_type", ""),
             extract_result.get("project_code", ""),
             extract_result.get("region", ""),
             normalized.get("detail_text", ""),
@@ -891,6 +909,11 @@ class DiscoveryService:
             targeting.get("regions", []),
             [extract_result.get("region", ""), normalized.get("title", ""), normalized.get("detail_text", "")],
         )
+        matched_notice_types = self._match_terms(
+            targeting.get("notice_types", []),
+            [extract_result.get("notice_type", ""), normalized.get("title", ""), normalized.get("detail_text", "")],
+        )
+        matched_exclude_keywords = self._match_terms(targeting.get("exclude_keywords", []), haystacks)
         matched_qualification_terms = self._match_terms(
             targeting.get("qualification_terms", []),
             [
@@ -902,6 +925,9 @@ class DiscoveryService:
 
         score = 0
         reasons: list[str] = []
+        if matched_exclude_keywords:
+            reasons.append(f"命中排除词：{'、'.join(matched_exclude_keywords[:3])}")
+            score -= min(60, 20 + len(matched_exclude_keywords) * 12)
         if matched_keywords:
             score += min(40, 15 + len(matched_keywords) * 8)
             reasons.append(f"命中关键词：{'、'.join(matched_keywords[:3])}")
@@ -910,6 +936,11 @@ class DiscoveryService:
             reasons.append(f"命中地区：{'、'.join(matched_regions[:3])}")
         elif targeting.get("regions"):
             reasons.append("未命中推荐地区，但已按非强制条件继续保留。")
+        if matched_notice_types:
+            score += min(12, 4 + len(matched_notice_types) * 4)
+            reasons.append(f"命中公告类型：{'、'.join(matched_notice_types[:3])}")
+        elif targeting.get("notice_types"):
+            reasons.append("未命中指定公告类型。")
         if matched_qualification_terms:
             score += min(25, 10 + len(matched_qualification_terms) * 5)
             reasons.append(f"命中资格条件：{'、'.join(matched_qualification_terms[:3])}")
@@ -917,15 +948,25 @@ class DiscoveryService:
             score += min(15, 6 + len(matched_industry_terms) * 4)
             reasons.append(f"命中行业方向：{'、'.join(matched_industry_terms[:3])}")
         if not reasons:
-            reasons.append("未明显命中当前定向采集条件。")
+            reasons.append(
+                "未明显命中当前关键词条件。"
+                if targeting.get("mode") == "keyword"
+                else "未明显命中当前定向采集条件。"
+            )
 
         return {
             "targeting_match_score": max(0, min(score, 100)),
             "profile_key": str(targeting.get("profile_key", "")),
-            "profile_title": str(targeting.get("profile_title", "")),
+            "profile_title": (
+                str(targeting.get("profile_title", ""))
+                if targeting.get("mode") == "targeted"
+                else "关键词采集"
+            ),
             "targeting_reasons": reasons,
             "matched_keywords": matched_keywords,
             "matched_regions": matched_regions,
+            "matched_notice_types": matched_notice_types,
+            "matched_exclude_keywords": matched_exclude_keywords,
             "matched_qualification_terms": matched_qualification_terms,
             "matched_industry_terms": matched_industry_terms,
         }
@@ -1126,6 +1167,7 @@ class DiscoveryService:
             "targeting_match_score": int(match_result.get("targeting_match_score", item.targeting_match_score)),
             "profile_key": str(match_result.get("profile_key", item.profile_key)),
             "profile_title": str(match_result.get("profile_title", item.profile_title)),
+            "matched_keywords": match_result.get("matched_keywords", []),
             "recommendation_reasons": match_result.get("recommendation_reasons", []),
         }
 
