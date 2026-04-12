@@ -8,7 +8,7 @@ from core.config import settings
 from core.exceptions import BusinessException
 
 SUPPORTED_UPLOAD_EXTENSIONS = {".txt", ".docx", ".pdf"}
-SUPPORTED_PARSE_EXTENSIONS = {".txt", ".docx"}
+SUPPORTED_PARSE_EXTENSIONS = {".txt", ".docx", ".pdf"}
 
 
 def ensure_tender_storage_dirs() -> None:

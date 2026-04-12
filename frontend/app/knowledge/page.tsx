@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, CSSProperties, MouseEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, CSSProperties, MouseEvent as ReactMouseEvent, useEffect, useMemo, useState } from "react";
 
 import AppShell from "@/components/app-shell";
 import AppModal from "@/components/ui/app-modal";
@@ -68,6 +68,15 @@ const TWO_LINE_CLAMP_STYLE: CSSProperties = {
   WebkitBoxOrient: "vertical",
   WebkitLineClamp: 2,
   overflow: "hidden"
+};
+
+const ACTION_MENU_WIDTH = 168;
+const ACTION_MENU_HEIGHT = 196;
+
+type ActionMenuState = {
+  documentId: string;
+  top: number;
+  left: number;
 };
 
 function normalizeCsvList(raw: string) {
@@ -154,6 +163,7 @@ export default function KnowledgePage() {
   const [deletingId, setDeletingId] = useState("");
   const [selectedKeyPoint, setSelectedKeyPoint] = useState<string | null>(null);
   const [selectedChunkPreviewItem, setSelectedChunkPreviewItem] = useState<KnowledgeChunkPreviewItem | null>(null);
+  const [actionMenu, setActionMenu] = useState<ActionMenuState | null>(null);
 
   const [retrieveCategory, setRetrieveCategory] = useState<KnowledgeCategory | "">("");
   const [retrieveQuery, setRetrieveQuery] = useState("");
@@ -180,6 +190,10 @@ export default function KnowledgePage() {
   const latestWarningCount = latestWarnings.length;
   const latestKeyPointPreview = latestKeyPoints.slice(0, 3);
   const latestChunkPreviewCards = latestChunkPreview.slice(0, 3);
+  const activeActionItem = useMemo(
+    () => documents.find((item) => item.document_id === actionMenu?.documentId) ?? null,
+    [actionMenu, documents]
+  );
 
   async function refreshDocuments(nextFilters?: {
     category?: KnowledgeCategory | "";
@@ -288,11 +302,66 @@ export default function KnowledgePage() {
     }
   }
 
-  function closeActionMenu(event: MouseEvent<HTMLElement>) {
-    const details = event.currentTarget.closest("details");
-    if (details instanceof HTMLDetailsElement) {
-      details.open = false;
+  useEffect(() => {
+    if (!actionMenu) {
+      return;
     }
+
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("[data-knowledge-action-menu]") || target?.closest("[data-knowledge-action-trigger]")) {
+        return;
+      }
+      setActionMenu(null);
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setActionMenu(null);
+      }
+    }
+
+    function handleViewportChange() {
+      setActionMenu(null);
+    }
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [actionMenu]);
+
+  function closeActionMenu() {
+    setActionMenu(null);
+  }
+
+  function toggleActionMenu(event: ReactMouseEvent<HTMLButtonElement>, documentId: string) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const preferUpward = viewportHeight - rect.bottom < ACTION_MENU_HEIGHT && rect.top > ACTION_MENU_HEIGHT;
+    const top = preferUpward
+      ? Math.max(12, rect.top - ACTION_MENU_HEIGHT - 8)
+      : Math.min(viewportHeight - ACTION_MENU_HEIGHT - 12, rect.bottom + 8);
+    const left = Math.min(Math.max(12, rect.right - ACTION_MENU_WIDTH), viewportWidth - ACTION_MENU_WIDTH - 12);
+
+    setActionMenu((current) => {
+      if (current?.documentId === documentId) {
+        return null;
+      }
+
+      return { documentId, top, left };
+    });
   }
 
   async function handleViewDocument(item: KnowledgeDocumentItem) {
@@ -595,7 +664,8 @@ export default function KnowledgePage() {
                 </div>
               </div>
 
-              <div className="overflow-hidden rounded-2xl border border-line bg-surface">
+              <div className="rounded-2xl border border-line bg-surface">
+                <div className="overflow-x-auto overflow-y-visible">
                 <table className="w-full table-fixed text-sm">
                   <colgroup>
                     <col className="w-[18%]" />
@@ -618,8 +688,6 @@ export default function KnowledgePage() {
                   <tbody className="divide-y divide-line">
                     {documents.length ? (
                       documents.map((item: KnowledgeDocumentItem) => {
-                        const canProcess = item.status === "uploaded" || item.status === "error";
-                        const busy = processingId === item.document_id;
 
                         return (
                           <tr key={item.document_id} className="align-top text-muted">
@@ -646,60 +714,15 @@ export default function KnowledgePage() {
                               {formatDateTime(item.updated_at)}
                             </td>
                             <td className="px-4 py-3 text-center align-middle whitespace-nowrap">
-                              <details className="relative inline-block text-left">
-                                <summary className="ui-button-ghost list-none cursor-pointer px-3 py-2">
-                                  操作
-                                </summary>
-                                <div className="absolute right-0 z-20 mt-2 min-w-[148px] rounded-2xl border border-line bg-white p-2 shadow-panel">
-                                  <div className="space-y-1">
-                                    <button
-                                      className="flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm text-muted transition hover:bg-accent-soft hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
-                                      type="button"
-                                      onClick={(event) => {
-                                        closeActionMenu(event);
-                                        handleViewDocument(item);
-                                      }}
-                                      disabled={viewingContentId === item.document_id}
-                                    >
-                                      {viewingContentId === item.document_id ? "加载中..." : "全文查看"}
-                                    </button>
-                                    <button
-                                      className="flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm text-muted transition hover:bg-accent-soft hover:text-ink"
-                                      type="button"
-                                      onClick={(event) => {
-                                        closeActionMenu(event);
-                                        handleDownloadDocument(item.document_id);
-                                      }}
-                                    >
-                                      文件下载
-                                    </button>
-                                    {canProcess ? (
-                                      <button
-                                        className="flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm text-muted transition hover:bg-accent-soft hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
-                                        type="button"
-                                        onClick={(event) => {
-                                          closeActionMenu(event);
-                                          handleProcess(item.document_id);
-                                        }}
-                                        disabled={busy || uploading}
-                                      >
-                                        {busy ? "处理中..." : "处理"}
-                                      </button>
-                                    ) : null}
-                                    <button
-                                      className="flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm text-danger transition hover:bg-danger-soft disabled:cursor-not-allowed disabled:opacity-50"
-                                      type="button"
-                                      onClick={(event) => {
-                                        closeActionMenu(event);
-                                        handleDeleteDocument(item);
-                                      }}
-                                      disabled={deletingId === item.document_id}
-                                    >
-                                      {deletingId === item.document_id ? "删除中..." : "删除"}
-                                    </button>
-                                  </div>
-                                </div>
-                              </details>
+                              <button
+                                className="ui-button-ghost px-3 py-2"
+                                type="button"
+                                data-knowledge-action-trigger
+                                aria-expanded={actionMenu?.documentId === item.document_id}
+                                onClick={(event) => toggleActionMenu(event, item.document_id)}
+                              >
+                                {"\u64cd\u4f5c"}
+                              </button>
                             </td>
                           </tr>
                         );
@@ -713,6 +736,7 @@ export default function KnowledgePage() {
                     )}
                   </tbody>
                 </table>
+                </div>
               </div>
             </div>
           </PanelCard>
@@ -916,6 +940,65 @@ export default function KnowledgePage() {
           </div>
         </div>
       </div>
+
+      {actionMenu && activeActionItem ? (
+        <div className="fixed inset-0 z-[90]" onClick={closeActionMenu}>
+          <div
+            data-knowledge-action-menu
+            className="absolute min-w-[168px] rounded-2xl border border-line bg-white p-2 shadow-panel"
+            style={{ top: actionMenu.top, left: actionMenu.left }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="space-y-1">
+              <button
+                className="flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm text-muted transition hover:bg-accent-soft hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+                type="button"
+                onClick={() => {
+                  closeActionMenu();
+                  handleViewDocument(activeActionItem);
+                }}
+                disabled={viewingContentId === activeActionItem.document_id}
+              >
+                {viewingContentId === activeActionItem.document_id ? "\u52a0\u8f7d\u4e2d..." : "\u5168\u6587\u67e5\u770b"}
+              </button>
+              <button
+                className="flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm text-muted transition hover:bg-accent-soft hover:text-ink"
+                type="button"
+                onClick={() => {
+                  closeActionMenu();
+                  handleDownloadDocument(activeActionItem.document_id);
+                }}
+              >
+                {"\u6587\u4ef6\u4e0b\u8f7d"}
+              </button>
+              {activeActionItem.status === "uploaded" || activeActionItem.status === "error" ? (
+                <button
+                  className="flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm text-muted transition hover:bg-accent-soft hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+                  type="button"
+                  onClick={() => {
+                    closeActionMenu();
+                    handleProcess(activeActionItem.document_id);
+                  }}
+                  disabled={processingId === activeActionItem.document_id || uploading}
+                >
+                  {processingId === activeActionItem.document_id ? "\u5904\u7406\u4e2d..." : "\u5904\u7406"}
+                </button>
+              ) : null}
+              <button
+                className="flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm text-danger transition hover:bg-danger-soft disabled:cursor-not-allowed disabled:opacity-50"
+                type="button"
+                onClick={() => {
+                  closeActionMenu();
+                  handleDeleteDocument(activeActionItem);
+                }}
+                disabled={deletingId === activeActionItem.document_id}
+              >
+                {deletingId === activeActionItem.document_id ? "\u5220\u9664\u4e2d..." : "\u5220\u9664"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <AppModal
         open={Boolean(viewingDocument)}

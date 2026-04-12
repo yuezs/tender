@@ -1,3 +1,4 @@
+import math
 import re
 from pathlib import Path
 
@@ -9,33 +10,51 @@ from docx.text.paragraph import Paragraph
 
 from core.exceptions import BusinessException
 
+try:
+    from pypdf import PdfReader
+except ImportError:  # pragma: no cover - dependency is declared in requirements
+    PdfReader = None
+
 
 HEADING_STYLE_PREFIXES = ("heading", "标题")
 LIST_STYLE_KEYWORDS = ("list", "bullet", "编号", "列表")
 SPACE_RE = re.compile(r"[ \t]+")
 MAX_HEADING_TEXT_LENGTH = 80
 LONG_PARAGRAPH_THRESHOLD = 180
-HIERARCHICAL_HEADING_RE = re.compile(r"^(?P<number>\d+(?:\.\d+){1,5})\s*[、.．]?\s*(?P<title>\S.*)$")
-NUMBERED_HEADING_RE = re.compile(r"^(?P<number>\d+)[、.．]\s*(?P<title>\S.*)$")
-CHINESE_HEADING_RE = re.compile(r"^(?P<number>[一二三四五六七八九十百千万]+)[、.．]\s*(?P<title>\S.*)$")
-PAREN_HEADING_RE = re.compile(r"^[（(](?P<number>[一二三四五六七八九十百千万0-9]+)[）)]\s*(?P<title>\S.*)$")
+HIERARCHICAL_HEADING_RE = re.compile(r"^(?P<number>\d+(?:\.\d+){1,5})\s*[、.)．-]?\s*(?P<title>\S.*)$")
+NUMBERED_HEADING_RE = re.compile(r"^(?P<number>\d+)[、.)．-]\s*(?P<title>\S.*)$")
+CHINESE_HEADING_RE = re.compile(
+    r"^(?P<number>[一二三四五六七八九十百千万]+)[、.)．-]\s*(?P<title>\S.*)$"
+)
+PAREN_HEADING_RE = re.compile(
+    r"^[（(](?P<number>[一二三四五六七八九十百千万0-9]+)[)）]\s*(?P<title>\S.*)$"
+)
 CHAPTER_HEADING_RE = re.compile(
     r"^第(?P<number>[一二三四五六七八九十百千万0-9]+)(?P<unit>章|节|部分|篇)\s*(?P<title>\S.*)?$"
 )
 INLINE_HEADING_BOUNDARY_RE = re.compile(
-    r"(?P<prefix>[。！？；;：:）】)\]])\s*(?P<heading>"
+    r"(?P<prefix>[。！；;）)\]】])\s*(?P<heading>"
     r"(?:第[一二三四五六七八九十百千万0-9]+(?:章|节|部分|篇)|"
     r"\d+(?:\.\d+){1,5}|"
-    r"\d+[、.．]|"
-    r"[一二三四五六七八九十百千万]+[、.．]|"
-    r"[（(][一二三四五六七八九十百千万0-9]+[）)])"
-    r")"
+    r"\d+[、.)．-]|"
+    r"[一二三四五六七八九十百千万]+[、.)．-]|"
+    r"[（(][一二三四五六七八九十百千万0-9]+[)）])"
+    r"\s*\S.*)"
 )
 FOCUS_POINT_BOUNDARY_RE = re.compile(
-    r"(?P<prefix>[：:；;])\s*(?P<marker>(?:[一二三四五六七八九十]是|首先|其次|再次|最后|另外|此外))"
+    r"(?P<prefix>[：:])\s*(?P<marker>(?:一是|二是|三是|首先|其次|再次|最后|另外|此外))"
 )
-PARAGRAPH_BREAK_RE = re.compile(r"(?<=[。！？；;])\s*")
-CLAUSE_BREAK_RE = re.compile(r"(?<=[，,、])\s*")
+PARAGRAPH_BREAK_RE = re.compile(r"(?<=[。！；;])\s*")
+CLAUSE_BREAK_RE = re.compile(r"(?<=[：:，,])\s*")
+
+PDF_MIN_EFFECTIVE_PAGE_TEXT_CHARS = 40
+PDF_MIN_TOTAL_TEXT_CHARS = 200
+PDF_MIN_STABLE_TEXT_PAGE_RATIO = 0.6
+PDF_MIN_NONEMPTY_TEXT_PAGE_RATIO = 0.75
+PDF_REJECTION_MESSAGE = (
+    "当前 PDF 疑似扫描件或混合型 PDF，暂仅支持可直接提取文本的 PDF，"
+    "请优先上传 txt、docx 或可选中文字的 PDF。"
+)
 
 
 def _normalize_line(raw_text: str) -> str:
@@ -46,7 +65,12 @@ def _normalize_line(raw_text: str) -> str:
         .replace("\r", "")
         .strip()
     )
-    cleaned = cleaned.replace("•", "- ").replace("●", "- ").replace("·", "- ").replace("▪", "- ")
+    cleaned = (
+        cleaned.replace("•", "- ")
+        .replace("●", "- ")
+        .replace("·", "- ")
+        .replace("■", "- ")
+    )
     cleaned = SPACE_RE.sub(" ", cleaned)
     return cleaned.strip()
 
@@ -97,7 +121,7 @@ def _detect_numbered_heading_level(text: str) -> int:
     if not text or len(text) > MAX_HEADING_TEXT_LENGTH:
         return 0
 
-    if any(marker in text for marker in ("。", "；", "！", "？")):
+    if any(marker in text for marker in ("。", "，", "；", "：")):
         return 0
 
     hierarchical_match = HIERARCHICAL_HEADING_RE.match(text)
@@ -106,16 +130,12 @@ def _detect_numbered_heading_level(text: str) -> int:
 
     if NUMBERED_HEADING_RE.match(text):
         return 1
-
     if CHINESE_HEADING_RE.match(text):
         return 1
-
     if PAREN_HEADING_RE.match(text):
         return 2
-
     if CHAPTER_HEADING_RE.match(text):
         return 1
-
     return 0
 
 
@@ -135,7 +155,6 @@ def _paragraph_kind(paragraph: Paragraph, text: str) -> tuple[str, int]:
 
     if any(keyword in style_name for keyword in LIST_STYLE_KEYWORDS):
         return "list_item", 0
-
     return "paragraph", 0
 
 
@@ -163,7 +182,6 @@ def _split_paragraph_text(text: str) -> list[str]:
             if _detect_numbered_heading_level(item):
                 fragments.append(item)
                 continue
-
             fragments.extend(_split_long_fragment(item))
 
     return [fragment for fragment in fragments if fragment]
@@ -185,6 +203,12 @@ def _format_table_row(cells: list[str]) -> str:
     return " | ".join(cells)
 
 
+def _append_text_fragments(blocks: list[dict], text: str) -> None:
+    for fragment in _split_paragraph_text(text):
+        kind, level = _text_block_kind(fragment)
+        blocks.append({"kind": kind, "text": fragment, "level": level})
+
+
 def parse_text_file(file_path: Path) -> str:
     encodings = ["utf-8-sig", "utf-8", "gb18030"]
     for encoding in encodings:
@@ -201,9 +225,7 @@ def parse_text_file_to_blocks(file_path: Path) -> list[dict]:
     for line in text.splitlines():
         if not line.strip():
             continue
-        for fragment in _split_paragraph_text(line):
-            kind, level = _text_block_kind(fragment)
-            blocks.append({"kind": kind, "text": fragment, "level": level})
+        _append_text_fragments(blocks, line)
     return blocks
 
 
@@ -247,6 +269,65 @@ def parse_docx_file_to_blocks(file_path: Path) -> list[dict]:
         raise BusinessException(f"解析失败：DOCX 文件读取异常：{exc}") from exc
 
 
+def _get_pdf_reader(file_path: Path) -> PdfReader:
+    if PdfReader is None:
+        raise BusinessException("解析失败：缺少 pypdf 依赖，请先安装后端 requirements。")
+    try:
+        return PdfReader(str(file_path))
+    except Exception as exc:
+        raise BusinessException(f"解析失败：PDF 文件读取异常：{exc}") from exc
+
+
+def _extract_pdf_page_texts(file_path: Path) -> list[str]:
+    reader = _get_pdf_reader(file_path)
+    page_texts: list[str] = []
+    for page in reader.pages:
+        try:
+            raw_text = page.extract_text() or ""
+        except Exception:
+            raw_text = ""
+        page_texts.append(_normalize_multiline_text(raw_text))
+    return page_texts
+
+
+def _validate_pdf_page_texts(page_texts: list[str]) -> None:
+    total_pages = len(page_texts)
+    if total_pages <= 0:
+        raise BusinessException(PDF_REJECTION_MESSAGE)
+
+    normalized_lengths = [len(text.replace("\n", "").strip()) for text in page_texts]
+    total_text_chars = sum(normalized_lengths)
+    nonempty_pages = sum(1 for length in normalized_lengths if length > 0)
+    effective_pages = sum(
+        1 for length in normalized_lengths if length >= PDF_MIN_EFFECTIVE_PAGE_TEXT_CHARS
+    )
+
+    min_effective_pages = max(1, math.ceil(total_pages * PDF_MIN_STABLE_TEXT_PAGE_RATIO))
+    min_nonempty_pages = max(1, math.ceil(total_pages * PDF_MIN_NONEMPTY_TEXT_PAGE_RATIO))
+
+    if total_text_chars < PDF_MIN_TOTAL_TEXT_CHARS:
+        raise BusinessException(PDF_REJECTION_MESSAGE)
+    if nonempty_pages < min_nonempty_pages:
+        raise BusinessException(PDF_REJECTION_MESSAGE)
+    if effective_pages < min_effective_pages:
+        raise BusinessException(PDF_REJECTION_MESSAGE)
+
+
+def parse_pdf_file_to_blocks(file_path: Path) -> list[dict]:
+    page_texts = _extract_pdf_page_texts(file_path)
+    _validate_pdf_page_texts(page_texts)
+
+    blocks: list[dict] = []
+    for page_text in page_texts:
+        if not page_text:
+            continue
+        for line in page_text.splitlines():
+            if not line.strip():
+                continue
+            _append_text_fragments(blocks, line)
+    return blocks
+
+
 def blocks_to_text(blocks: list[dict]) -> str:
     lines: list[str] = []
     for block in blocks:
@@ -271,6 +352,10 @@ def parse_docx_file(file_path: Path) -> str:
     return blocks_to_text(parse_docx_file_to_blocks(file_path))
 
 
+def parse_pdf_file(file_path: Path) -> str:
+    return blocks_to_text(parse_pdf_file_to_blocks(file_path))
+
+
 def parse_file_to_blocks(file_path: Path) -> list[dict]:
     extension = file_path.suffix.lower()
 
@@ -279,7 +364,7 @@ def parse_file_to_blocks(file_path: Path) -> list[dict]:
     if extension == ".docx":
         return parse_docx_file_to_blocks(file_path)
     if extension == ".pdf":
-        raise BusinessException("解析失败：PDF 解析接口已预留，当前 MVP 请优先上传 txt 或 docx 文件。")
+        return parse_pdf_file_to_blocks(file_path)
     raise BusinessException("解析失败：不支持的文件类型。")
 
 

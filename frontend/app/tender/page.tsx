@@ -265,7 +265,7 @@ export default function TenderPage() {
                   <p className="text-sm leading-6 text-muted">
                     {selectedFile
                       ? `文件大小约 ${(selectedFile.size / 1024).toFixed(1)} KB。上传后会继续进入解析、抽取、判断和生成。`
-                      : "支持 txt / docx / pdf。演示优先推荐 txt、docx，以保证处理结果更稳定。"}
+                      : "支持 txt / docx / PDF。当前仅支持文本型 PDF，扫描件和混合型 PDF 暂不支持。"}
                   </p>
                   <div className="flex flex-wrap gap-2 pt-1">
                     <span className="rounded-full border border-line/70 bg-panel px-2.5 py-1 text-xs text-muted">TXT / DOCX / PDF</span>
@@ -432,7 +432,7 @@ export default function TenderPage() {
               <div className="pb-4">
                 <p className="text-sm font-semibold text-ink">输入边界</p>
                 <p className="mt-2 text-sm leading-6 text-muted">
-                  优先上传内容结构清晰的 txt 或 docx 文件。pdf 当前也可上传，但解析结果更适合作为预留展示。
+                  优先上传结构清晰的 txt、docx 或可直接选中文字的 PDF。扫描件和混合型 PDF 当前暂不支持。
                 </p>
               </div>
               <div className="py-4">
