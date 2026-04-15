@@ -1,0 +1,50 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 724 >>
+stream
+BT
+/F1 11 Tf
+72 760 Td (Tender demo smart park platform project) Tj
+0 -18 Td
+72 742 Td (Project XC-GXQ-2026-01 owner Xingcheng Hi-tech Industrial Park Committee) Tj
+0 -18 Td
+72 724 Td (Budget 4.8 million RMB duration 6 months open tender) Tj
+0 -18 Td
+72 706 Td (Scope smart park map personnel vehicle video energy mobile app integration) Tj
+0 -18 Td
+72 688 Td (Requirements private deployment api integration mysql audit log high availability) Tj
+0 -18 Td
+72 670 Td (Qualification independent legal entity two similar projects iso9001 iso27001 iso20000 cmmi preferred) Tj
+0 -18 Td
+72 652 Td (Scoring technical 60 business 20 price 20) Tj
+0 -18 Td
+72 634 Td (Deadline 2026-05-10 17:00 opening 2026-05-11 09:30) Tj
+0 -18 Td
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001016 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1086
+%%EOF
